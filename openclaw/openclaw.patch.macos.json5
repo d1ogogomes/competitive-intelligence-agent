@@ -8,7 +8,7 @@
 {
   agents: {
     defaults: {
-      workspace: "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26/openclaw-lab/workspace",
+      workspace: "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26/openclaw/workspace",
       repoRoot: "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26",
       model: {
         // OpenRouter free tier.

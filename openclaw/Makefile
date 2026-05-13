@@ -15,7 +15,7 @@ endif
 
 ENV := OPENCLAW_STATE_DIR="$(STATE)" OPENCLAW_CONFIG_PATH="$(CONFIG)"
 
-.PHONY: env setup setup-full onboard sync-config validate status models auth auth-openrouter smoke cli agent gateway health mcp tools skills plugins memory-status memory-index memory-search doctor reset
+.PHONY: env setup setup-full onboard sync-config validate status models auth auth-openrouter smoke cli agent gateway health mcp tools skills install-skill update-skills plugins memory-status memory-index memory-search doctor reset
 
 env:
 	@echo OPENCLAW_STATE_DIR=$(STATE)
@@ -111,6 +111,13 @@ tools:
 
 skills:
 	$(ENV) openclaw skills list
+
+install-skill:
+	@test -n "$(SLUG)" || { echo "Usage: make install-skill SLUG=humanizer"; exit 1; }
+	$(ENV) openclaw skills install "$(SLUG)"
+
+update-skills:
+	$(ENV) openclaw skills update
 
 plugins:
 	$(ENV) openclaw plugins list

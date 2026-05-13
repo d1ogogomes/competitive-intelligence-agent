@@ -25,13 +25,15 @@ agent/workspace/sessions/
 agent/workspace/state/
 agent/workspace/*.db
 agent/workspace/*.db-*
-openclaw-lab/workspace/
-openclaw-lab/workspace/.git/
-openclaw-lab/workspace/.openclaw/
-openclaw-lab/workspace/screenshots/
-openclaw-lab/workspace/memory/.dreams/
-openclaw-lab/workspace/memory/original/
-openclaw-lab/config/openclaw.json.bak*
+openclaw/workspace/*
+!openclaw/workspace/skills/
+!openclaw/workspace/skills/**
+openclaw/workspace/.git/
+openclaw/workspace/.openclaw/
+openclaw/workspace/screenshots/
+openclaw/workspace/memory/.dreams/
+openclaw/workspace/memory/original/
+openclaw/config/openclaw.json.bak*
 
 # Local source mirror already pushed separately to git@github.com:md3f4ltm/openclaw.git
-/openclaw/
+/legacy-openclaw-source/

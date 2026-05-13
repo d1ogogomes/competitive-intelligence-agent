@@ -1,4 +1,4 @@
-# OpenClaw Lab
+# OpenClaw
 
 OpenClaw isolado para o projeto da cadeira. **Não** usa `~/.openclaw` como state/config.
 
@@ -23,7 +23,7 @@ Há dois patches de config. O `Makefile` escolhe automaticamente com base em `un
 
 | Ficheiro | Quando é usado | Paths / modelo |
 |----------|----------------|----------------|
-| `openclaw.patch.json5` | Linux (Micael) | `/home/micael/...`, `openai-codex/gpt-5.5`, qmd habilitado |
+| `openclaw.patch.json5` | Linux (Micael) | `/home/micael/...`, LM Studio local, qmd habilitado |
 | `openclaw.patch.macos.json5` | macOS (Diogo) | `/Users/diogogomes/...`, OpenRouter free router, qmd desligado |
 
 Razões da divergência:
@@ -64,6 +64,9 @@ make auth             # lista perfis de auth
 make smoke            # dispara uma query de teste ao agente
 make cli              # chat TUI local
 make gateway          # corre o gateway
+make skills           # lista skills disponíveis
+make install-skill SLUG=humanizer
+make update-skills
 make memory-search Q="competitor monitor"
 make reset            # limpa state/ workspace/ para recomeçar do zero
 ```
@@ -72,8 +75,8 @@ make reset            # limpa state/ workspace/ para recomeçar do zero
 
 Depois de `make setup-full`, o `config/openclaw.json` fica com:
 
-- Modelo principal: `openrouter/openrouter/free` (alias `or-free`) — é o **Free Models Router** do OpenRouter. Rota automaticamente entre os modelos gratuitos que estão operacionais e suportam tools.
-- Fallbacks: `openrouter/openrouter/auto`, `openrouter/owl-alpha`
+- Modelo principal: `lmstudio/google/gemma-4-e4b` (alias `gemma-local`) via `http://192.168.1.91:1234/v1`.
+- Fallbacks: `openrouter/google/gemma-4-31b-it:free`, `openrouter/openrouter/free`, `openrouter/openrouter/auto`, `openrouter/owl-alpha`
 - Thinking/reasoning: `low`
 - Tools: `web_search`, `web_fetch`, `browser`, `exec`, `read`, `write`, `edit`, `memory_search`, `memory_get`
 - Exec approval: `off` (autonomia total dentro do workspace)

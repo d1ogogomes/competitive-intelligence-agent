@@ -1,14 +1,15 @@
 {
   agents: {
     defaults: {
-      workspace: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/workspace",
+      workspace: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace",
       repoRoot: "/home/micael/Documents/2026-ei-aoopii-c26",
       model: {
-        primary: "openai-codex/gpt-5.5",
+        primary: "lmstudio/google/gemma-4-e4b",
         fallbacks: [
-          "openai-codex/gpt-5.4",
-          "openai-codex/gpt-5.3-codex",
-          "openai-codex/gpt-5-mini"
+          "openrouter/google/gemma-4-31b-it:free",
+          "openrouter/openrouter/free",
+          "openrouter/openrouter/auto",
+          "openrouter/owl-alpha"
         ]
       },
       thinkingDefault: "low",
@@ -21,6 +22,7 @@
         "ddg-search",
         "github",
         "gh-issues",
+        "humanizer",
         "session-logs",
         "taskflow",
         "tmux"
@@ -81,20 +83,56 @@
         }
       },
       models: {
-        "openai-codex/gpt-5.5": {
-          alias: "gpt55",
+        "lmstudio/google/gemma-4-e4b": {
+          alias: "gemma-local",
           params: {
             reasoning: { effort: "low" }
           }
+        },
+        "openrouter/google/gemma-4-31b-it:free": {
+          alias: "gemma-free",
+          params: {
+            reasoning: { effort: "low" }
+          }
+        },
+        "openrouter/openrouter/free": {
+          alias: "or-free",
+          params: {
+            reasoning: { effort: "low" }
+          }
+        },
+        "openrouter/openrouter/auto": {
+          alias: "or-auto"
         }
+      }
+    }
+  },
+  models: {
+    mode: "merge",
+    providers: {
+      lmstudio: {
+        baseUrl: "http://192.168.1.91:1234/v1",
+        api: "openai-completions",
+        timeoutSeconds: 120,
+        request: {
+          allowPrivateNetwork: true
+        },
+        models: [
+          {
+            id: "google/gemma-4-e4b",
+            name: "Google Gemma 4 E4B",
+            api: "openai-completions",
+            input: ["text"]
+          }
+        ]
       }
     }
   },
   auth: {
     profiles: {
-      "openai-codex:default": {
-        provider: "openai-codex",
-        mode: "oauth"
+      "openrouter:default": {
+        provider: "openrouter",
+        mode: "api_key"
       }
     }
   },
@@ -158,7 +196,7 @@
       sessions: {
         enabled: true,
         retentionDays: 30,
-        exportDir: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/state/qmd-sessions"
+        exportDir: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/state/qmd-sessions"
       },
       update: {
         interval: "10m",
@@ -237,7 +275,7 @@
           recentAssistantChars: 800,
           logging: true,
           persistTranscripts: true,
-          transcriptDir: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/state/active-memory",
+          transcriptDir: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/state/active-memory",
           cacheTtlMs: 30000,
           circuitBreakerMaxTimeouts: 5,
           circuitBreakerCooldownMs: 60000
@@ -253,7 +291,7 @@
         config: {
           vaultMode: "isolated",
           vault: {
-            path: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/workspace/memory-wiki",
+            path: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace/memory-wiki",
             renderMode: "native"
           },
           ingest: {
@@ -298,7 +336,7 @@
     },
     load: {
       extraDirs: [
-        "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/workspace/skills"
+        "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace/skills"
       ],
       watch: true,
       watchDebounceMs: 1000

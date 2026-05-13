@@ -1,11 +1,13 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26/openclaw-lab/workspace",
-      "repoRoot": "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26",
+      "workspace": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace",
+      "repoRoot": "/home/micael/Documents/2026-ei-aoopii-c26",
       "model": {
-        "primary": "openrouter/openrouter/free",
+        "primary": "lmstudio/google/gemma-4-e4b",
         "fallbacks": [
+          "openrouter/google/gemma-4-31b-it:free",
+          "openrouter/openrouter/free",
           "openrouter/openrouter/auto",
           "openrouter/owl-alpha"
         ]
@@ -38,15 +40,40 @@
               "effort": "low"
             }
           }
+        },
+        "openrouter/google/gemma-4-31b-it:free": {
+          "alias": "gemma-free",
+          "params": {
+            "reasoning": {
+              "effort": "low"
+            }
+          }
+        },
+        "openrouter/openrouter/auto": {
+          "alias": "or-auto"
+        },
+        "lmstudio/google/gemma-4-e4b": {
+          "alias": "gemma-local",
+          "params": {
+            "reasoning": {
+              "effort": "low"
+            }
+          }
         }
       },
       "skills": [
+        "agent-browser",
+        "agent-browser-core",
+        "openclaw-agent-browser-clawdbot",
+        "safe-memory-manager",
         "browser-automation",
         "ddg-search",
         "github",
         "gh-issues",
+        "humanizer",
         "session-logs",
-        "taskflow"
+        "taskflow",
+        "tmux"
       ],
       "memorySearch": {
         "enabled": true,
@@ -55,7 +82,7 @@
           "sessions"
         ],
         "extraPaths": [
-          "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26/docs"
+          "/home/micael/Documents/2026-ei-aoopii-c26/docs"
         ],
         "experimental": {
           "sessionMemory": true
@@ -135,12 +162,15 @@
       "web_search",
       "web_fetch",
       "browser",
+      "browser_open",
+      "screenshot",
+      "http_request",
+      "shell",
       "exec",
-      "read",
-      "write",
-      "edit",
-      "memory_search",
-      "memory_get"
+      "file_read",
+      "file_write",
+      "file_edit",
+      "git"
     ],
     "deny": [],
     "exec": {
@@ -180,10 +210,13 @@
       "gh-issues",
       "session-logs",
       "taskflow",
+      "tmux",
       "skill-creator"
     ],
     "load": {
-      "extraDirs": [],
+      "extraDirs": [
+        "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace/skills"
+      ],
       "watch": true,
       "watchDebounceMs": 1000
     },
@@ -201,14 +234,14 @@
     }
   },
   "wizard": {
-    "lastRunAt": "2026-05-13T18:22:54.371Z",
-    "lastRunVersion": "2026.5.7",
+    "lastRunAt": "2026-05-13T19:47:20.006Z",
+    "lastRunVersion": "2026.5.6",
     "lastRunCommand": "onboard",
     "lastRunMode": "local"
   },
   "meta": {
-    "lastTouchedVersion": "2026.5.7",
-    "lastTouchedAt": "2026-05-13T18:50:23.751Z"
+    "lastTouchedVersion": "2026.5.6",
+    "lastTouchedAt": "2026-05-13T20:46:35.781Z"
   },
   "commands": {
     "text": true,
@@ -267,7 +300,7 @@
       "sessions": {
         "enabled": true,
         "retentionDays": 30,
-        "exportDir": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/state/qmd-sessions"
+        "exportDir": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/state/qmd-sessions"
       },
       "update": {
         "interval": "10m",
@@ -315,7 +348,7 @@
         "enabled": true
       },
       "active-memory": {
-        "enabled": false,
+        "enabled": true,
         "hooks": {
           "allowPromptInjection": true,
           "allowConversationAccess": true,
@@ -352,14 +385,14 @@
           "recentAssistantChars": 800,
           "logging": true,
           "persistTranscripts": true,
-          "transcriptDir": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/state/active-memory",
+          "transcriptDir": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/state/active-memory",
           "cacheTtlMs": 30000,
           "circuitBreakerMaxTimeouts": 5,
           "circuitBreakerCooldownMs": 60000
         }
       },
       "memory-wiki": {
-        "enabled": false,
+        "enabled": true,
         "hooks": {
           "allowPromptInjection": true,
           "allowConversationAccess": true,
@@ -368,7 +401,7 @@
         "config": {
           "vaultMode": "isolated",
           "vault": {
-            "path": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/workspace/memory-wiki",
+            "path": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace/memory-wiki",
             "renderMode": "native"
           },
           "ingest": {
@@ -399,6 +432,29 @@
     },
     "slots": {
       "memory": "memory-core"
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "lmstudio": {
+        "baseUrl": "http://192.168.1.91:1234/v1",
+        "api": "openai-completions",
+        "timeoutSeconds": 120,
+        "request": {
+          "allowPrivateNetwork": true
+        },
+        "models": [
+          {
+            "id": "google/gemma-4-e4b",
+            "name": "Google Gemma 4 E4B",
+            "api": "openai-completions",
+            "input": [
+              "text"
+            ]
+          }
+        ]
+      }
     }
   }
 }
