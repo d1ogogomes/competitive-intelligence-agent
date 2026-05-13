@@ -1,8 +1,10 @@
 state/
 data/
 reports/
+.env
 *.log
 *.png
 *.jpg
 *.jpeg
 *.webp
+config/openclaw.json.bak*

@@ -1,14 +1,13 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/workspace",
-      "repoRoot": "/home/micael/Documents/2026-ei-aoopii-c26",
+      "workspace": "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26/openclaw-lab/workspace",
+      "repoRoot": "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26",
       "model": {
-        "primary": "openai-codex/gpt-5.5",
+        "primary": "openrouter/openrouter/free",
         "fallbacks": [
-          "openai-codex/gpt-5.4",
-          "openai-codex/gpt-5.3-codex",
-          "openai-codex/gpt-5-mini"
+          "openrouter/openrouter/auto",
+          "openrouter/owl-alpha"
         ]
       },
       "thinkingDefault": "low",
@@ -20,20 +19,34 @@
               "effort": "low"
             }
           }
+        },
+        "openrouter/deepseek/deepseek-chat-v3.1:free": {
+          "alias": "ds-free",
+          "params": {
+            "reasoning": {
+              "effort": "low"
+            }
+          }
+        },
+        "openrouter/auto": {
+          "alias": "OpenRouter"
+        },
+        "openrouter/openrouter/free": {
+          "alias": "or-free",
+          "params": {
+            "reasoning": {
+              "effort": "low"
+            }
+          }
         }
       },
       "skills": [
-        "agent-browser",
-        "agent-browser-core",
-        "openclaw-agent-browser-clawdbot",
-        "safe-memory-manager",
         "browser-automation",
         "ddg-search",
         "github",
         "gh-issues",
         "session-logs",
-        "taskflow",
-        "tmux"
+        "taskflow"
       ],
       "memorySearch": {
         "enabled": true,
@@ -42,7 +55,7 @@
           "sessions"
         ],
         "extraPaths": [
-          "/home/micael/Documents/2026-ei-aoopii-c26/docs"
+          "/Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26/docs"
         ],
         "experimental": {
           "sessionMemory": true
@@ -96,7 +109,8 @@
           "prompt": "Write any lasting notes to memory/YYYY-MM-DD.md and MEMORY.md when appropriate; reply with NO_REPLY if nothing to store.",
           "systemPrompt": "Session nearing compaction. Store durable memories now."
         }
-      }
+      },
+      "skipBootstrap": true
     }
   },
   "gateway": {
@@ -121,15 +135,12 @@
       "web_search",
       "web_fetch",
       "browser",
-      "browser_open",
-      "screenshot",
-      "http_request",
-      "shell",
       "exec",
-      "file_read",
-      "file_write",
-      "file_edit",
-      "git"
+      "read",
+      "write",
+      "edit",
+      "memory_search",
+      "memory_get"
     ],
     "deny": [],
     "exec": {
@@ -169,13 +180,10 @@
       "gh-issues",
       "session-logs",
       "taskflow",
-      "tmux",
       "skill-creator"
     ],
     "load": {
-      "extraDirs": [
-        "/home/micael/Documents/2026-ei-aoopii-c26/openclaw-lab/workspace/skills"
-      ],
+      "extraDirs": [],
       "watch": true,
       "watchDebounceMs": 1000
     },
@@ -193,14 +201,14 @@
     }
   },
   "wizard": {
-    "lastRunAt": "2026-05-13T16:18:58.564Z",
-    "lastRunVersion": "2026.5.6",
+    "lastRunAt": "2026-05-13T18:22:54.371Z",
+    "lastRunVersion": "2026.5.7",
     "lastRunCommand": "onboard",
     "lastRunMode": "local"
   },
   "meta": {
-    "lastTouchedVersion": "2026.5.6",
-    "lastTouchedAt": "2026-05-13T16:34:11.128Z"
+    "lastTouchedVersion": "2026.5.7",
+    "lastTouchedAt": "2026-05-13T18:50:23.751Z"
   },
   "commands": {
     "text": true,
@@ -215,6 +223,10 @@
       "openai-codex:default": {
         "provider": "openai-codex",
         "mode": "oauth"
+      },
+      "openrouter:default": {
+        "provider": "openrouter",
+        "mode": "api_key"
       }
     }
   },
@@ -303,7 +315,7 @@
         "enabled": true
       },
       "active-memory": {
-        "enabled": true,
+        "enabled": false,
         "hooks": {
           "allowPromptInjection": true,
           "allowConversationAccess": true,
@@ -347,7 +359,7 @@
         }
       },
       "memory-wiki": {
-        "enabled": true,
+        "enabled": false,
         "hooks": {
           "allowPromptInjection": true,
           "allowConversationAccess": true,
@@ -379,6 +391,9 @@
         }
       },
       "lmstudio": {
+        "enabled": true
+      },
+      "openrouter": {
         "enabled": true
       }
     },
