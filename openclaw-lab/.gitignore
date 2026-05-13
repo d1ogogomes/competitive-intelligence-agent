@@ -1,0 +1,8 @@
+state/
+data/
+reports/
+*.log
+*.png
+*.jpg
+*.jpeg
+*.webp

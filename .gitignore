@@ -1,0 +1,37 @@
+# Local secrets/state
+.env
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+**/.secret_key
+**/credentials/
+**/*.token.json
+**/*.pem
+**/*.key
+**/data/
+**/state/
+**/.bin/
+**/reports/
+**/*.log
+
+# Generated workspace state
+agent/workspace/
+agent/workspace/data/
+agent/workspace/reports/
+agent/workspace/cron/
+agent/workspace/memory/
+agent/workspace/sessions/
+agent/workspace/state/
+agent/workspace/*.db
+agent/workspace/*.db-*
+openclaw-lab/workspace/
+openclaw-lab/workspace/.git/
+openclaw-lab/workspace/.openclaw/
+openclaw-lab/workspace/screenshots/
+openclaw-lab/workspace/memory/.dreams/
+openclaw-lab/workspace/memory/original/
+openclaw-lab/config/openclaw.json.bak*
+
+# Local source mirror already pushed separately to git@github.com:md3f4ltm/openclaw.git
+/openclaw/

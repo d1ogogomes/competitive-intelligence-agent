@@ -1,0 +1,118 @@
+workspace_dir = "./workspace"
+config_path = "./data/.zeroclaw/config.toml"
+
+# Codex auth/subscription. O perfil autenticado fica persistido em ./data.
+default_provider = "openai-codex"
+default_model = "gpt-5.5"
+
+# Para usar API key normal, troca para algo deste género:
+# default_provider = "openrouter"
+# default_model = "anthropic/claude-sonnet-4-20250514"
+
+default_temperature = 0.4
+
+[agent]
+parallel_tools = true
+max_tool_iterations = 16
+max_tool_result_chars = 80000
+
+[agent.thinking]
+default_level = "low"
+
+[runtime]
+kind = "native"
+reasoning_enabled = true
+reasoning_effort = "low"
+
+[web_search]
+enabled = true
+provider = "duckduckgo"
+max_results = 10
+timeout_secs = 20
+
+[web_fetch]
+enabled = true
+allowed_domains = ["*"]
+blocked_domains = []
+allowed_private_hosts = []
+max_response_size = 500000
+timeout_secs = 30
+
+[browser]
+enabled = true
+allowed_domains = ["*"]
+backend = "native"
+native_headless = true
+native_webdriver_url = "http://127.0.0.1:9515"
+native_chrome_path = "/usr/bin/chromium"
+
+[text_browser]
+enabled = true
+preferred_browser = "w3m"
+timeout_secs = 30
+
+[gateway]
+port = 42617
+host = "127.0.0.1"
+allow_public_bind = true
+require_pairing = false
+
+[autonomy]
+level = "supervised"
+
+# Tools úteis para este projeto:
+# - pesquisa e fetch web para recolha/monitorização de fontes
+# - leitura/escrita/edição para scripts, snapshots e relatórios
+# - git para versionar alterações controladas
+# - memória para guardar contexto operacional reutilizável
+auto_approve = [
+  "file_read",
+  "file_write",
+  "file_edit",
+  "memory_recall",
+  "memory_store",
+  "web_search_tool",
+  "web_fetch",
+  "web_search",
+  "browser_search",
+  "browser_fetch",
+  "browser",
+  "browser_open",
+  "screenshot",
+  "http_fetch",
+  "calculator",
+  "glob_search",
+  "content_search",
+  "git_operations"
+]
+
+allowed_commands = [
+  "git",
+  "npm",
+  "cargo",
+  "ls",
+  "cat",
+  "grep",
+  "find",
+  "echo",
+  "pwd",
+  "wc",
+  "head",
+  "tail",
+  "date",
+  "df",
+  "du",
+  "uname",
+  "uptime",
+  "hostname",
+  "python",
+  "python3",
+  "pip",
+  "node",
+  "free",
+  "chromium",
+  "chromedriver",
+  "grim",
+  "slurp",
+  "import"
+]
