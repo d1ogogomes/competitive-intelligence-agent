@@ -28,6 +28,9 @@ agent/workspace/*.db-*
 openclaw/workspace/*
 !openclaw/workspace/skills/
 !openclaw/workspace/skills/**
+!openclaw/workspace/AGENTS.md
+!openclaw/workspace/memory/
+!openclaw/workspace/memory/**
 openclaw/workspace/.git/
 openclaw/workspace/.openclaw/
 openclaw/workspace/screenshots/
