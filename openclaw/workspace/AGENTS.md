@@ -16,6 +16,8 @@ Ver `memory/competitors.md` para a lista completa com URLs.
 ## Regras
 
 - Usa `web_fetch` por defeito. Só usa browser headless se a página não devolver conteúdo útil.
+- Para páginas com JS pesado (GitHub Copilot changelog, Zed releases), corre o script `scripts/fetch-snapshot.sh <competitor> <source> <url> [selector]` que usa o `agent-browser` (Chromium headless).
+- Para fetch de todos os 5 concorrentes de uma vez, corre `scripts/fetch-all.sh`.
 - Um request de cada vez por domínio. Não martelar.
 - Guarda sempre o snapshot antes de analisar. Primeiro guardar, depois pensar.
 - O briefing tem de dizer o que mudou, não repetir o que já se sabia.

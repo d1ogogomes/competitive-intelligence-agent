@@ -1,6 +1,5 @@
 state/
 data/
-reports/
 .env
 *.log
 *.png
@@ -8,3 +7,6 @@ reports/
 *.jpeg
 *.webp
 config/openclaw.json.bak*
+
+# workspace/reports is versioned (briefings are intentional output we want to ship).
+# workspace/data, workspace/state etc. stay out via the root .gitignore.

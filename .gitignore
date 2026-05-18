@@ -31,6 +31,10 @@ openclaw/workspace/*
 !openclaw/workspace/AGENTS.md
 !openclaw/workspace/memory/
 !openclaw/workspace/memory/**
+!openclaw/workspace/scripts/
+!openclaw/workspace/scripts/**
+!openclaw/workspace/reports/
+!openclaw/workspace/reports/**
 openclaw/workspace/.git/
 openclaw/workspace/.openclaw/
 openclaw/workspace/screenshots/
