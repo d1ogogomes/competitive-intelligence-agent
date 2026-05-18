@@ -4,11 +4,11 @@
       "workspace": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace",
       "repoRoot": "/home/micael/Documents/2026-ei-aoopii-c26",
       "model": {
-        "primary": "lmstudio/google/gemma-4-e4b",
+        "primary": "openai-codex/gpt-5.5",
         "fallbacks": [
           "openrouter/google/gemma-4-31b-it:free",
-          "openrouter/openrouter/free",
-          "openrouter/openrouter/auto",
+          "openrouter/free",
+          "openrouter/auto",
           "openrouter/owl-alpha"
         ]
       },
@@ -31,15 +31,7 @@
           }
         },
         "openrouter/auto": {
-          "alias": "OpenRouter"
-        },
-        "openrouter/openrouter/free": {
-          "alias": "or-free",
-          "params": {
-            "reasoning": {
-              "effort": "low"
-            }
-          }
+          "alias": "or-auto"
         },
         "openrouter/google/gemma-4-31b-it:free": {
           "alias": "gemma-free",
@@ -49,11 +41,17 @@
             }
           }
         },
-        "openrouter/openrouter/auto": {
-          "alias": "or-auto"
-        },
         "lmstudio/google/gemma-4-e4b": {
           "alias": "gemma-local",
+          "params": {
+            "reasoning": {
+              "effort": "low"
+            }
+          }
+        },
+        "openai/gpt-5.5": {},
+        "openrouter/free": {
+          "alias": "or-free",
           "params": {
             "reasoning": {
               "effort": "low"
@@ -71,6 +69,7 @@
         "github",
         "gh-issues",
         "humanizer",
+        "agentmail",
         "session-logs",
         "taskflow",
         "tmux"
@@ -240,8 +239,8 @@
     "lastRunMode": "local"
   },
   "meta": {
-    "lastTouchedVersion": "2026.5.6",
-    "lastTouchedAt": "2026-05-13T20:46:35.781Z"
+    "lastTouchedVersion": "2026.5.12",
+    "lastTouchedAt": "2026-05-18T21:55:45.045Z"
   },
   "commands": {
     "text": true,
@@ -249,7 +248,11 @@
     "config": true,
     "mcp": true,
     "plugins": true,
-    "debug": true
+    "debug": true,
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
   },
   "auth": {
     "profiles": {
@@ -260,6 +263,10 @@
       "openrouter:default": {
         "provider": "openrouter",
         "mode": "api_key"
+      },
+      "openai-codex:md3f4ltm@gmail.com": {
+        "provider": "openai-codex",
+        "mode": "oauth"
       }
     }
   },
@@ -346,50 +353,6 @@
       },
       "memory-core": {
         "enabled": true
-      },
-      "active-memory": {
-        "enabled": true,
-        "hooks": {
-          "allowPromptInjection": true,
-          "allowConversationAccess": true,
-          "timeoutMs": 60000
-        },
-        "subagent": {
-          "allowModelOverride": true,
-          "allowedModels": [
-            "openai-codex/gpt-5.5",
-            "openai-codex/gpt-5.4"
-          ]
-        },
-        "config": {
-          "enabled": true,
-          "agents": [
-            "main"
-          ],
-          "model": "openai-codex/gpt-5.5",
-          "modelFallback": "openai-codex/gpt-5.4",
-          "modelFallbackPolicy": "resolved-only",
-          "thinking": "low",
-          "allowedChatTypes": [
-            "direct",
-            "group",
-            "channel",
-            "explicit"
-          ],
-          "queryMode": "recent",
-          "promptStyle": "recall-heavy",
-          "maxSummaryChars": 800,
-          "recentUserTurns": 3,
-          "recentAssistantTurns": 2,
-          "recentUserChars": 800,
-          "recentAssistantChars": 800,
-          "logging": true,
-          "persistTranscripts": true,
-          "transcriptDir": "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/state/active-memory",
-          "cacheTtlMs": 30000,
-          "circuitBreakerMaxTimeouts": 5,
-          "circuitBreakerCooldownMs": 60000
-        }
       },
       "memory-wiki": {
         "enabled": true,

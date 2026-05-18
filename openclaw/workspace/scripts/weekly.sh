@@ -51,6 +51,10 @@ linhas de header repetidas (BACK TO BLOG, FILTERS, COPY RSS FEED URL, etc.)
 e foca-te nas mudanças reais (releases, novas features, deprecations,
 alterações de pricing).
 
+Se uma fonte ainda só tiver um snapshot e portanto não houver diff, trata essa
+execução como baseline inicial: diz isso explicitamente e não apresentes sinais
+estáticos como se fossem mudanças verificadas.
+
 Usa a tool 'write' (NÃO file_write) para guardar um briefing em
 reports/${week_id}.md, seguindo a estrutura definida em AGENTS.md:
 
@@ -71,6 +75,8 @@ reports/${week_id}.md, seguindo a estrutura definida em AGENTS.md:
 
 Escreve em português, factual, sem marketing. Se um concorrente não tem
 mudanças relevantes, escreve "Sem alterações relevantes nesta semana."
+Não incluas linguagem de estado interno no resumo, como "criei ficheiros" ou
+"corri scripts", exceto numa nota metodológica curta quando for baseline.
 EOF
 )
 

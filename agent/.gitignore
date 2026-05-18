@@ -1,4 +1,5 @@
 .bin/
+.env
 data/
 workspace/data/
 workspace/reports/

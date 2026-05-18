@@ -4,7 +4,7 @@
       workspace: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/workspace",
       repoRoot: "/home/micael/Documents/2026-ei-aoopii-c26",
       model: {
-        primary: "lmstudio/google/gemma-4-e4b",
+        primary: "openai-codex/gpt-5.5",
         fallbacks: [
           "openrouter/google/gemma-4-31b-it:free",
           "openrouter/openrouter/free",
@@ -23,6 +23,7 @@
         "github",
         "gh-issues",
         "humanizer",
+        "agentmail",
         "session-logs",
         "taskflow",
         "tmux"
@@ -247,40 +248,7 @@
       "memory-core": {
         enabled: true
       },
-      "active-memory": {
-        enabled: true,
-        hooks: {
-          allowPromptInjection: true,
-          allowConversationAccess: true,
-          timeoutMs: 60000
-        },
-        subagent: {
-          allowModelOverride: true,
-          allowedModels: ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4"]
-        },
-        config: {
-          enabled: true,
-          agents: ["main"],
-          model: "openai-codex/gpt-5.5",
-          modelFallback: "openai-codex/gpt-5.4",
-          modelFallbackPolicy: "resolved-only",
-          thinking: "low",
-          allowedChatTypes: ["direct", "group", "channel", "explicit"],
-          queryMode: "recent",
-          promptStyle: "recall-heavy",
-          maxSummaryChars: 800,
-          recentUserTurns: 3,
-          recentAssistantTurns: 2,
-          recentUserChars: 800,
-          recentAssistantChars: 800,
-          logging: true,
-          persistTranscripts: true,
-          transcriptDir: "/home/micael/Documents/2026-ei-aoopii-c26/openclaw/state/active-memory",
-          cacheTtlMs: 30000,
-          circuitBreakerMaxTimeouts: 5,
-          circuitBreakerCooldownMs: 60000
-        }
-      },
+      "active-memory": null,
       "memory-wiki": {
         enabled: true,
         hooks: {

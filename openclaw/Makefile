@@ -83,7 +83,7 @@ auth-openrouter:
 	    <<< "$$OPENROUTER_API_KEY"
 
 cli:
-	$(ENV) openclaw chat
+	$(ENV) openclaw chat --local --session main --thinking low
 
 agent:
 	$(ENV) openclaw agent --local --message "Confirma qual modelo estás a usar e lista as tools disponíveis." --thinking low
