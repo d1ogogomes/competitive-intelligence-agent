@@ -12,6 +12,15 @@
 
 set -euo pipefail
 
+skip_qa=false
+skip_fetch=false
+for arg in "$@"; do
+  case "$arg" in
+    --skip-qa) skip_qa=true ;;
+    --skip-fetch) skip_fetch=true ;;  # reuse existing snapshots/diffs/metrics (no re-scrape)
+  esac
+done
+
 script_dir=$(cd "$(dirname "$0")" && pwd)
 workspace_dir=$(cd "$script_dir/.." && pwd)
 openclaw_dir=$(cd "$workspace_dir/.." && pwd)
@@ -39,53 +48,116 @@ session_id="weekly-${week_id}"
 
 echo "[weekly] $week_id starting"
 
-"$script_dir/fetch-all.sh"
-"$script_dir/diff-all.sh"
+if [[ "$skip_fetch" == "true" ]]; then
+  echo "[weekly] --skip-fetch: a reutilizar snapshots/diffs/métricas existentes"
+else
+  "$script_dir/fetch-all.sh"
+  "$script_dir/diff-all.sh"
+  # Deterministic scoring from the snapshots (Δ price, new models, blog, jobs) ->
+  # data/metrics.csv + data/ranks.csv. The agent writes the qualitative analysis;
+  # the numbers come from here, not from the LLM.
+  python3 "$script_dir/compute-metrics.py" "$week_id" "$workspace_dir/data/snapshots" || \
+    echo "[weekly] compute-metrics falhou (baseline sem comparação?)" >&2
+  python3 "$script_dir/extract-pricing.py" "$week_id" "$workspace_dir/data/snapshots" || \
+    echo "[weekly] extract-pricing falhou" >&2
+fi
 
 # Compose a deterministic prompt for the agent. Keep instructions explicit
 # because free models follow tool semantics imperfectly.
 prompt=$(cat <<EOF
+És um analista de competitive intelligence sobre os frontier model labs:
+OpenAI, Anthropic, Google / Gemini, xAI e Mistral AI.
+
+Lê o ficheiro 'memory/competitors.md' para saberes as URLs públicas oficiais de cada concorrente/fonte (ex: o pricing da Anthropic é https://www.anthropic.com/pricing).
+
 Lê todos os diffs em data/diffs/*/*/. Cada um descreve o que foi adicionado
-e removido entre os dois snapshots mais recentes de um concorrente. Ignora
-linhas de header repetidas (BACK TO BLOG, FILTERS, COPY RSS FEED URL, etc.)
-e foca-te nas mudanças reais (releases, novas features, deprecations,
-alterações de pricing).
+e removido entre os dois snapshots mais recentes de um lab. Ignora linhas de
+header repetidas (menus, FILTERS, COPY RSS FEED URL, etc.) e foca-te nas
+mudanças reais (novos modelos, alterações de pricing, features de API,
+deprecations, contratações que revelem direção).
 
 Se uma fonte ainda só tiver um snapshot e portanto não houver diff, trata essa
 execução como baseline inicial: diz isso explicitamente e não apresentes sinais
 estáticos como se fossem mudanças verificadas.
 
 Usa a tool 'write' (NÃO file_write) para guardar um briefing em
-reports/${week_id}.md, seguindo a estrutura definida em AGENTS.md:
+reports/${week_id}.md, seguindo EXATAMENTE esta estrutura:
 
   # Briefing Semanal — Semana ${week_id}
 
   ## Resumo
-  3-5 bullets do mais importante.
+  3-5 bullets do mais importante da semana, com números concretos quando existirem.
 
-  ## <Concorrente>
+  ## OpenAI
   ### O que mudou
-  ### Relevância
+  - <facto verificável e específico> — Fonte: <url_publica_oficial> (<data>)
+  - <outro facto> — Fonte: <url_publica_oficial> (<data>)
+  ### Porque importa
+  <2-3 frases: implicações competitivas, não repetir o facto>
+  ### O que fazer
+  - <ação concreta ou sinal a vigiar para a próxima semana>
+
+  ## Anthropic
+  (mesma estrutura: O que mudou / Porque importa / O que fazer)
+
+  ## Google / Gemini
+  (mesma estrutura)
+
+  ## xAI
+  (mesma estrutura)
+
+  ## Mistral AI
+  (mesma estrutura)
 
   ## Sinais cruzados
-  Coisas que mais de um concorrente fez ao mesmo tempo.
+  Padrões que mais de um lab fez ao mesmo tempo (ex: guerra de preços, ciclos de release alinhados).
 
   ## Fontes
-  URLs + datas dos diffs.
+  Lista de URLs consultados com data.
 
-Escreve em português, factual, sem marketing. Se um concorrente não tem
-mudanças relevantes, escreve "Sem alterações relevantes nesta semana."
-Não incluas linguagem de estado interno no resumo, como "criei ficheiros" ou
-"corri scripts", exceto numa nota metodológica curta quando for baseline.
+REGRAS DE QUALIDADE (isto é um produto pago — rigor acima de tudo):
+- CADA bullet em "O que mudou" TEM de terminar com a URL pública oficial do concorrente extraída de 'memory/competitors.md'. Exemplo: "— Fonte: https://www.anthropic.com/pricing (2026-05-29)".
+- **PROIBIDO**: Nunca uses caminhos de ficheiros locais (ex: 'data/diffs/...' ou 'reports/...') como fonte. A fonte deve ser sempre a URL web pública oficial.
+- Só afirmas o que está REALMENTE nos diffs. Nada de inventar números, modelos ou preços. Se não há prova, não existe.
+- "Porque importa" é análise (o "e depois?"), não repetição do facto.
+- "O que fazer" é acionável: o que o leitor deve vigiar ou decidir.
+- Se um lab não mudou, escreve só "Sem alterações relevantes nesta semana." em "O que mudou" e deixa as outras secções curtas.
+- Português, factual, zero marketing. Não narres o teu processo ("criei", "corri").
+
+NOTA: o score/ranking de cada lab é calculado por uma ferramenta a partir dos snapshots (Δ de preços, modelos novos, etc.) — tu NÃO escreves scores.
 EOF
 )
 
-openclaw agent --local --thinking low --timeout 300 \
-  --agent main \
-  --session-id "$session_id" \
-  --message "$prompt"
+# The Gemini free tier returns 429/503 under load; retry with backoff before giving up.
+agent_ok=false
+for attempt in 1 2 3; do
+  echo "[weekly] agente (tentativa $attempt/3)..."
+  if openclaw agent --local --thinking low --timeout 300 \
+       --agent main --session-id "${session_id}-${attempt}" --message "$prompt"; then
+    agent_ok=true
+    break
+  fi
+  echo "[weekly] tentativa $attempt falhou; backoff..." >&2
+  sleep $((attempt * 20))
+done
+if [[ "$agent_ok" != "true" ]]; then
+  echo "[weekly] ERRO: agente falhou 3x (provável quota/429 do Gemini). Sem briefing." >&2
+  exit 1
+fi
 
 echo "[weekly] $week_id done -> workspace/reports/${week_id}.md"
+
+# Run Automated QA Guardrail
+if [[ "$skip_qa" == "true" ]]; then
+  echo "[weekly] QA Guardrail SKIPPED via --skip-qa flag"
+else
+  echo "[weekly] Running Automated QA Guardrail..."
+  if ! python3 "$script_dir/qa-check.py" "$workspace_dir/reports/${week_id}.md" "$workspace_dir/data/metrics.csv"; then
+    echo "[weekly] ERROR: QA Guardrail rejected the generated briefing!" >&2
+    echo "[weekly] Email delivery BLOCKED to preserve subscription quality." >&2
+    exit 1
+  fi
+fi
 
 # Optional email delivery via AgentMail. Skips silently if not configured.
 if [[ -n "${AGENTMAIL_API_KEY:-}" && -n "${AGENTMAIL_INBOX_ID:-}" && -n "${BRIEFING_RECIPIENTS:-}" ]]; then

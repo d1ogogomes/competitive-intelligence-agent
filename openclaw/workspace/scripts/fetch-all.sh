@@ -24,37 +24,38 @@ run_fetch() {
   fi
 }
 
-run_fetch cursor changelog "https://cursor.com/changelog"
-run_fetch cursor docs "https://docs.cursor.com"
-run_fetch cursor pricing "https://cursor.com/pricing"
-run_fetch cursor blog "https://cursor.com/blog"
-run_fetch cursor jobs "https://cursor.com/careers"
+# Frontier model labs. 4 sources each: models, pricing, blog (news), jobs.
+# Competitor set switched 2026-05-29 (was coding assistants). See memory/competitors.md.
 
-run_fetch github-copilot changelog "https://github.blog/changelog/label/copilot/"
-run_fetch github-copilot docs "https://docs.github.com/copilot"
-run_fetch github-copilot pricing "https://github.com/features/copilot/plans"
-run_fetch github-copilot blog "https://github.blog/ai-and-ml/"
-# Final URL after redirects; github.careers -> www.github.careers drops origin-scoped headers.
-run_fetch github-copilot jobs "https://www.github.careers/careers-home"
+run_fetch openai models "https://platform.openai.com/docs/models"
+run_fetch openai pricing "https://openai.com/api/pricing/"
+run_fetch openai blog "https://openai.com/news/"
+run_fetch openai jobs "https://openai.com/careers/search/"
+run_fetch openai changelog "https://platform.openai.com/docs/changelog"
 
-run_fetch claude models "https://docs.anthropic.com/en/docs/about-claude/models"
-run_fetch claude docs "https://docs.anthropic.com"
-run_fetch claude pricing "https://www.anthropic.com/pricing"
-run_fetch claude blog "https://www.anthropic.com/news"
-run_fetch claude jobs "https://www.anthropic.com/careers"
+run_fetch anthropic models "https://docs.anthropic.com/en/docs/about-claude/models"
+run_fetch anthropic pricing "https://www.anthropic.com/pricing"
+run_fetch anthropic blog "https://www.anthropic.com/news"
+run_fetch anthropic jobs "https://www.anthropic.com/careers"
+run_fetch anthropic changelog "https://docs.anthropic.com/en/release-notes/whats-new"
 
-run_fetch windsurf changelog "https://windsurf.com/changelog"
-run_fetch windsurf docs "https://docs.windsurf.com"
-run_fetch windsurf pricing "https://windsurf.com/pricing"
-run_fetch windsurf blog "https://windsurf.com/blog"
-run_fetch windsurf jobs "https://windsurf.com/careers"
+run_fetch google models "https://ai.google.dev/gemini-api/docs/models"
+run_fetch google pricing "https://ai.google.dev/pricing"
+run_fetch google blog "https://blog.google/technology/ai/"
+run_fetch google jobs "https://deepmind.google/about/careers/"
+run_fetch google changelog "https://ai.google.dev/gemini-api/docs/release-notes"
 
-run_fetch zed releases "https://zed.dev/releases"
-run_fetch zed docs "https://zed.dev/docs"
-run_fetch zed pricing "https://zed.dev/pricing"
-run_fetch zed blog "https://zed.dev/blog"
-run_fetch zed jobs "https://zed.dev/jobs"
-run_fetch zed github "https://github.com/zed-industries/zed"
+run_fetch xai models "https://docs.x.ai/docs/models"
+run_fetch xai pricing "https://docs.x.ai/docs/models"
+run_fetch xai blog "https://x.ai/news"
+run_fetch xai jobs "https://x.ai/careers"
+run_fetch xai changelog "https://docs.x.ai/docs"
+
+run_fetch mistral models "https://docs.mistral.ai/getting-started/models/models_overview/"
+run_fetch mistral pricing "https://mistral.ai/pricing"
+run_fetch mistral blog "https://mistral.ai/news"
+run_fetch mistral jobs "https://mistral.ai/careers"
+run_fetch mistral changelog "https://docs.mistral.ai/changelog/"
 
 if [[ "$failures" -gt 0 ]]; then
   echo "[fetch-all] done with $failures failure(s)" >&2

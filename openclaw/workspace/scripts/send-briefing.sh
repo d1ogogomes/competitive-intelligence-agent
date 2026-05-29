@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # send-briefing.sh
 # Sends the latest weekly briefing via the AgentMail API.
-# Sends both plain text and simple HTML so the email is readable in normal
-# clients while preserving the Markdown file as the source of truth.
+# Sends both plain text (the Markdown) and a rich HTML body with a ranking
+# table + weekly rank-evolution chart, so the email is readable and visual.
+#
+# Pipeline:
+#   1. compute-metrics.py     deterministic metrics from snapshots -> data/metrics.csv + ranks.csv
+#   2. render-briefing-html.py  build the HTML body (markdown + ranks table + QuickChart)
+#   3. curl                   POST to AgentMail
 #
 # Required env (loaded from openclaw/.env):
 #   AGENTMAIL_API_KEY      starts with "am_..." (https://agentmail.to dashboard)
@@ -42,111 +47,27 @@ if [[ -z "$briefing" || ! -f "$briefing" ]]; then
   exit 1
 fi
 
+ranks_csv="$workspace_dir/data/ranks.csv"
+week_id=$(basename "$briefing" .md | grep -oE '[0-9]{4}-W[0-9]{1,2}' || true)
+
+# 1. Compute deterministic metrics from the snapshots -> data/metrics.csv + ranks.csv.
+#    Score/ranking come from real signals (Δ price, new models, ...), not the LLM.
+if ! python3 "$script_dir/compute-metrics.py" "${week_id:-}" "$workspace_dir/data/snapshots"; then
+  echo "[send-briefing] WARN: compute-metrics falhou (sem snapshots para comparar?)" >&2
+fi
+
+if ! python3 "$script_dir/extract-pricing.py" "${week_id:-}" "$workspace_dir/data/snapshots"; then
+  echo "[send-briefing] WARN: extract-pricing falhou" >&2
+fi
+
 basename=$(basename "$briefing" .md)
 subject="Competitive Intelligence — ${basename}"
 body=$(cat "$briefing")
-html=$(BRIEFING_FILE="$briefing" python3 <<'PY'
-import html
-import os
-import re
-from pathlib import Path
 
-path = Path(os.environ["BRIEFING_FILE"])
-lines = path.read_text(encoding="utf-8").splitlines()
+# 2. Build the rich HTML body.
+html=$(python3 "$script_dir/render-briefing-html.py" "$briefing" "$ranks_csv")
 
-def inline(text: str) -> str:
-    escaped = html.escape(text)
-    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
-    return escaped
-
-LOGOS = {
-    "Cursor": "https://www.google.com/s2/favicons?domain=cursor.com&sz=64",
-    "GitHub Copilot": "https://www.google.com/s2/favicons?domain=github.com&sz=64",
-    "Claude / Anthropic": "https://www.google.com/s2/favicons?domain=anthropic.com&sz=64",
-    "Windsurf": "https://www.google.com/s2/favicons?domain=windsurf.com&sz=64",
-    "Zed": "https://www.google.com/s2/favicons?domain=zed.dev&sz=64",
-}
-
-def heading(text: str, level: int) -> str:
-    safe = inline(text)
-    logo = LOGOS.get(text)
-    if level == 2 and logo:
-        alt = html.escape(text)
-        return (
-            f'<h2 class="brand-heading">'
-            f'<img src="{logo}" alt="{alt}" width="24" height="24"> '
-            f'<span>{safe}</span></h2>'
-        )
-    return f"<h{level}>{safe}</h{level}>"
-
-parts = ["""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { margin: 0; padding: 0; background: #f6f7f9; color: #17202a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 28px 18px; }
-    .card { background: #ffffff; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; }
-    .header { padding: 24px 28px; border-bottom: 1px solid #e7ebef; background: #101820; color: #ffffff; }
-    h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: 0; }
-    .content { padding: 22px 28px 28px; }
-    h2 { margin: 26px 0 10px; font-size: 17px; line-height: 1.3; border-bottom: 1px solid #e7ebef; padding-bottom: 7px; }
-    h3 { margin: 18px 0 8px; font-size: 15px; line-height: 1.3; }
-    .brand-heading { display: flex; align-items: center; gap: 9px; }
-    .brand-heading img { display: inline-block; border-radius: 5px; vertical-align: middle; }
-    p { margin: 8px 0; line-height: 1.55; }
-    ul { margin: 8px 0 14px 0; padding-left: 22px; }
-    li { margin: 6px 0; line-height: 1.5; }
-    .meta { margin-top: 18px; color: #5d6975; font-size: 13px; }
-  </style>
-</head>
-<body><div class="wrap"><div class="card">"""]
-
-in_list = False
-header_done = False
-
-def close_list():
-    global in_list
-    if in_list:
-        parts.append("</ul>")
-        in_list = False
-
-for raw in lines:
-    line = raw.rstrip()
-    if not line:
-        close_list()
-        continue
-    if line.startswith("# "):
-        close_list()
-        if not header_done:
-            parts.append(f'<div class="header"><h1>{inline(line[2:].strip())}</h1></div><div class="content">')
-            header_done = True
-        else:
-            parts.append(f"<h1>{inline(line[2:].strip())}</h1>")
-    elif line.startswith("## "):
-        close_list()
-        parts.append(heading(line[3:].strip(), 2))
-    elif line.startswith("### "):
-        close_list()
-        parts.append(heading(line[4:].strip(), 3))
-    elif line.startswith("- "):
-        if not in_list:
-            parts.append("<ul>")
-            in_list = True
-        parts.append(f"<li>{inline(line[2:].strip())}</li>")
-    else:
-        close_list()
-        parts.append(f"<p>{inline(line.strip())}</p>")
-
-close_list()
-if header_done:
-    parts.append('<p class="meta">Relatório gerado automaticamente a partir de snapshots públicos.</p></div>')
-parts.append("</div></div></body></html>")
-print("\n".join(parts))
-PY
-)
-
-# AgentMail expects JSON; jq builds it safely (escaping newlines/quotes).
+# 3. AgentMail expects JSON; jq builds it safely (escaping newlines/quotes).
 payload=$(jq -n \
   --arg subject "$subject" \
   --arg text "$body" \

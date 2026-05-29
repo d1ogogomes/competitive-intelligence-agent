@@ -1,6 +1,6 @@
 # intelagent
 
-Agente de competitive intelligence. Monitoriza concorrentes no espaço de AI coding assistants, deteta mudanças nas suas páginas públicas, e produz um briefing semanal.
+Agente de competitive intelligence. Monitoriza os **frontier model labs** (OpenAI, Anthropic, Google/Gemini, xAI, Mistral), deteta mudanças nas suas páginas públicas, e produz um briefing semanal com um **ranking** de atividade por lab.
 
 ## O que faz
 
@@ -33,19 +33,36 @@ Ver `memory/competitors.md` para a lista completa com URLs.
 ## Resumo
 3-5 bullets do mais importante.
 
-## Cursor
-- O que mudou:
-- Relevância:
+## OpenAI
+### O que mudou
+- <facto específico> — Fonte: <url> (<data>)
+### Porque importa
+<análise: o "e depois?">
+### O que fazer
+- <ação / sinal a vigiar>
 
-## GitHub Copilot
-...
+## Anthropic
+(mesma estrutura)
+## Google / Gemini
+(mesma estrutura)
+## xAI
+(mesma estrutura)
+## Mistral AI
+(mesma estrutura)
 
 ## Sinais cruzados
-Coisas que mais de um concorrente fez ao mesmo tempo.
+Padrões que mais de um lab fez ao mesmo tempo.
 
 ## Fontes
 URLs consultados com data.
 ```
+
+REGRAS: cada bullet de "O que mudou" termina com `— Fonte: <url> (<data>)`; só se
+afirma o que está nos diffs (zero invenção); "Porque importa" é análise, "O que
+fazer" é acionável. O **score/ranking NÃO é escrito pelo LLM** — é calculado por
+`scripts/compute-metrics.py` a partir dos snapshots (Δ de preços, modelos novos,
+novidades no blog, variação de vagas), com fórmula transparente. Nomes EXATOS dos
+labs: `OpenAI`, `Anthropic`, `Google / Gemini`, `xAI`, `Mistral AI`.
 
 ## Quando correr
 

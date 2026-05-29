@@ -1,42 +1,51 @@
 # Concorrentes
 
-## Cursor (Anysphere)
-- Changelog: https://cursor.com/changelog
-- Docs: https://docs.cursor.com
-- Pricing: https://cursor.com/pricing
-- Blog: https://cursor.com/blog
-- Jobs: https://cursor.com/careers
-- Twitter: https://x.com/cursor_ai
+Foco: **frontier model labs** (quem treina e vende os modelos de fundação).
+4 fontes por lab: `models`, `pricing`, `blog` (news), `jobs` (careers).
 
-## GitHub Copilot (Microsoft)
-- Changelog: https://github.blog/changelog/label/copilot/
-- Docs: https://docs.github.com/copilot
-- Pricing: https://github.com/features/copilot/plans
-- Blog: https://github.blog/ai-and-ml/
-- Jobs: https://github.careers
-- Twitter: https://x.com/GitHubCopilot
+## OpenAI
+- Models: https://platform.openai.com/docs/models
+- Pricing: https://openai.com/api/pricing/
+- Blog: https://openai.com/news/
+- Jobs: https://openai.com/careers/search/
+- Changelog: https://platform.openai.com/docs/changelog
+- Twitter: https://x.com/OpenAI
 
-## Claude / Claude Code (Anthropic)
+## Anthropic
 - Models: https://docs.anthropic.com/en/docs/about-claude/models
-- Docs: https://docs.anthropic.com
 - Pricing: https://www.anthropic.com/pricing
 - Blog: https://www.anthropic.com/news
 - Jobs: https://www.anthropic.com/careers
+- Changelog: https://docs.anthropic.com/en/release-notes/whats-new
 - Twitter: https://x.com/AnthropicAI
 
-## Windsurf (Codeium)
-- Changelog: https://windsurf.com/changelog
-- Docs: https://docs.windsurf.com
-- Pricing: https://windsurf.com/pricing
-- Blog: https://windsurf.com/blog
-- Jobs: https://windsurf.com/careers
-- Twitter: https://x.com/windsurf_ai
+## Google / Gemini (Google DeepMind)
+- Models: https://ai.google.dev/gemini-api/docs/models
+- Pricing: https://ai.google.dev/pricing
+- Blog: https://blog.google/technology/ai/
+- Jobs: https://deepmind.google/about/careers/
+- Changelog: https://ai.google.dev/gemini-api/docs/release-notes
+- Twitter: https://x.com/GoogleDeepMind
 
-## Zed (Zed Industries)
-- Releases: https://zed.dev/releases
-- Docs: https://zed.dev/docs
-- Pricing: https://zed.dev/pricing
-- Blog: https://zed.dev/blog
-- Jobs: https://zed.dev/jobs
-- Twitter: https://x.com/zeddotdev
-- GitHub: https://github.com/zed-industries/zed
+## xAI (Grok)
+- Models: https://docs.x.ai/docs/models
+- Pricing: https://docs.x.ai/docs/models#models-and-pricing
+- Blog: https://x.ai/news
+- Jobs: https://x.ai/careers
+- Changelog: https://docs.x.ai/docs
+- Twitter: https://x.com/xai
+
+## Mistral AI
+- Models: https://docs.mistral.ai/getting-started/models/models_overview/
+- Pricing: https://mistral.ai/pricing
+- Blog: https://mistral.ai/news
+- Jobs: https://mistral.ai/careers
+- Changelog: https://docs.mistral.ai/changelog/
+- Twitter: https://x.com/MistralAI
+
+---
+
+Nota: conjunto trocado em 2026-05-29 (antes eram coding assistants: Cursor,
+GitHub Copilot, Claude Code, Windsurf, Zed). Mistral adicionado a seguir.
+Para trocar/adicionar um lab basta editar este ficheiro, `scripts/fetch-all.sh`,
+o dict `LABS` em `scripts/render-briefing-html.py` e o prompt de `scripts/weekly.sh`.
