@@ -34,7 +34,8 @@ run_fetch github-copilot changelog "https://github.blog/changelog/label/copilot/
 run_fetch github-copilot docs "https://docs.github.com/copilot"
 run_fetch github-copilot pricing "https://github.com/features/copilot/plans"
 run_fetch github-copilot blog "https://github.blog/ai-and-ml/"
-run_fetch github-copilot jobs "https://github.careers"
+# Final URL after redirects; github.careers -> www.github.careers drops origin-scoped headers.
+run_fetch github-copilot jobs "https://www.github.careers/careers-home"
 
 run_fetch claude models "https://docs.anthropic.com/en/docs/about-claude/models"
 run_fetch claude docs "https://docs.anthropic.com"

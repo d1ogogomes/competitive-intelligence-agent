@@ -28,6 +28,10 @@ source="$2"
 url="$3"
 selector="${4:-main}"
 
+# Some sites (e.g. github.careers) 403 the default headless user-agent.
+# Send a realistic desktop Chrome UA on every fetch.
+user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
 today=$(date -u +%Y-%m-%d)
 # Resolve repo-relative paths regardless of where this script is invoked from.
 script_dir=$(cd "$(dirname "$0")" && pwd)
@@ -39,7 +43,7 @@ mkdir -p "$out_dir"
 
 echo "[fetch-snapshot] $competitor/$source <- $url"
 
-agent-browser open "$url" >/dev/null
+agent-browser open "$url" --headers "{\"User-Agent\": \"$user_agent\"}" >/dev/null
 agent-browser wait --load networkidle >/dev/null
 content=$(agent-browser get text "$selector" 2>/dev/null || true)
 
