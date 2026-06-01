@@ -151,8 +151,8 @@ def run_checks(parsed, metrics_csv_path):
     cited_bullets = 0
     uncited_list = []
 
-    # Source URL regex
-    source_regex = re.compile(r"— Fonte:\s*(https?://\S+)")
+    # Source URL regex (supports em-dash —, en-dash –, and standard hyphen -)
+    source_regex = re.compile(r"[—–-]\s*Fonte:\s*(https?://\S+)")
 
     for lab, data in parsed["labs"].items():
         bullets = data["mudou"]
@@ -161,6 +161,8 @@ def run_checks(parsed, metrics_csv_path):
             continue
 
         for b in bullets:
+            if "sem alterações" in b.lower():
+                continue
             total_bullets += 1
             if source_regex.search(b):
                 cited_bullets += 1
