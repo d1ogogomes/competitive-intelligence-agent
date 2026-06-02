@@ -157,11 +157,11 @@ def run_checks(parsed, metrics_csv_path):
     for lab, data in parsed["labs"].items():
         bullets = data["mudou"]
         # Skip checking if the only bullet is "Sem alterações relevantes"
-        if len(bullets) == 1 and "sem alterações" in bullets[0].lower():
+        if len(bullets) == 1 and "sem alteraç" in bullets[0].lower():
             continue
 
         for b in bullets:
-            if "sem alterações" in b.lower():
+            if "sem alteraç" in b.lower():
                 continue
             total_bullets += 1
             if source_regex.search(b):
@@ -217,7 +217,7 @@ def run_checks(parsed, metrics_csv_path):
             says_no_change = False
             if not mudou_bullets:
                 says_no_change = True
-            elif len(mudou_bullets) == 1 and "sem alterações" in mudou_bullets[0].lower():
+            elif len(mudou_bullets) == 1 and "sem alteraç" in mudou_bullets[0].lower():
                 says_no_change = True
 
             if metrics:
