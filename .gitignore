@@ -45,3 +45,4 @@ openclaw/config/openclaw.json.bak*
 # Local source mirror already pushed separately to git@github.com:md3f4ltm/openclaw.git
 /legacy-openclaw-source/
 /openclaw-lab/
+.DS_Store

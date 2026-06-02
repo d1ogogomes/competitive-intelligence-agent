@@ -129,19 +129,28 @@ EOF
 )
 
 # The Gemini free tier returns 429/503 under load; retry with backoff before giving up.
+# IMPORTANT: `openclaw agent` exits 0 even when the run errors (isError=true) and
+# never writes the report. So we cannot trust its exit code. Instead we verify the
+# report file was actually (re)written during THIS run by comparing against a marker
+# created before the agent starts. This also prevents shipping a stale report that
+# happens to already exist on disk (e.g. carried over from a previous run).
+report_path="$workspace_dir/reports/${week_id}.md"
+run_marker=$(mktemp)
 agent_ok=false
 for attempt in 1 2 3; do
   echo "[weekly] agente (tentativa $attempt/3)..."
-  if openclaw agent --local --thinking low --timeout 300 \
-       --agent main --session-id "${session_id}-${attempt}" --message "$prompt"; then
+  openclaw agent --local --thinking low --timeout 300 \
+    --agent main --session-id "${session_id}-${attempt}" --message "$prompt" || true
+  if [[ -f "$report_path" && "$report_path" -nt "$run_marker" ]]; then
     agent_ok=true
     break
   fi
-  echo "[weekly] tentativa $attempt falhou; backoff..." >&2
-  sleep $((attempt * 20))
+  echo "[weekly] tentativa $attempt não gerou briefing novo (provável 429/quota); backoff..." >&2
+  sleep $((attempt * 60))  # 60s/120s: deixa o limite por-minuto do free tier recuperar
 done
+rm -f "$run_marker"
 if [[ "$agent_ok" != "true" ]]; then
-  echo "[weekly] ERRO: agente falhou 3x (provável quota/429 do Gemini). Sem briefing." >&2
+  echo "[weekly] ERRO: agente não produziu um briefing novo em 3 tentativas (provável quota/429). Sem envio." >&2
   exit 1
 fi
 
