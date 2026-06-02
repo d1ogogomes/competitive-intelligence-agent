@@ -14,8 +14,8 @@ gateway=127.0.0.1:42717
 ## Pré-requisitos
 
 - Node.js 22+ e npm
-- OpenClaw CLI instalado globalmente: `npm install -g openclaw@latest`
-- Chromium / Chrome (opcional, só para skills de browser)
+- OpenClaw CLI + agent-browser globais: `npm i -g openclaw@2026.5.7 agent-browser@0.27.0`
+- Chromium (necessário para o fetch dos snapshots): `npx playwright install --with-deps chromium`
 
 ## Patches
 
@@ -107,6 +107,87 @@ workspace/
 ```
 
 Estes subdirectórios são criados on demand pelo agente ou pelos scripts; não são versionados.
+
+## Pipeline semanal
+
+O `workspace/scripts/weekly.sh` é o ponto de entrada único (alvo do cron):
+
+1. `fetch-all.sh` — captura os snapshots de hoje de cada fonte.
+2. `diff-all.sh` — calcula o diff de cada par contra o snapshot anterior.
+3. **agente OpenClaw** — lê os diffs e escreve `reports/<ano>-W<semana>.md`.
+4. `qa-check.py` — QA Guardrail (rastreabilidade das afirmações); bloqueia o envio se reprovar.
+5. `send-briefing.sh` — envia o briefing por email (AgentMail), se as vars estiverem definidas.
+
+**Fiabilidade do agente (importante):**
+
+- O `openclaw agent` devolve **exit 0 mesmo quando falha** (`isError=true`) e não escreve o report. Por isso o `weekly.sh` **não confia no exit code**: cria um marcador antes da run e só dá a run por boa se o `reports/<semana>.md` ficar **mais recente** que o marcador. Se o agente falhar, o script **aborta sem enviar** — nunca reenvia um briefing antigo.
+- **Modelos free não servem para esta run.** Tanto o `openrouter/openrouter/free` (narra em vez de chamar a tool `write`) como o `gemini-2.5-flash` **free tier** (429 por limite **por-minuto**, atingido a meio da run porque o agente faz dezenas de chamadas a ler diffs) falham de forma não-vigiável. Para correr no cron usa um **modelo pago** (OpenRouter pago, Gemini com billing, ou DigitalOcean Inference). Custo típico ~$0.10–0.40/run (≈ $5–20/ano).
+
+## Deploy num VPS (DigitalOcean Droplet)
+
+Testado em Ubuntu 24.04. O Chromium do `agent-browser` precisa de RAM — usa um Droplet de **≥ 2 GB**.
+
+```sh
+# --- no Droplet ---
+timedatectl set-timezone Europe/Lisbon
+apt-get update && apt-get install -y git jq python3 curl ca-certificates
+
+# Node 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
+
+# libs de sistema do Chromium headless
+apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+  libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+  libasound2t64 libpango-1.0-0 libcairo2 fonts-liberation
+
+# CLIs (fixar as mesmas versões que em dev) + Chromium do Playwright
+npm i -g openclaw@2026.5.7 agent-browser@0.27.0
+npx --yes playwright install --with-deps chromium
+```
+
+O repo é privado e os **secrets não vão no git** (`.env` e `state/.../auth-profiles.json` são gitignored). A forma mais simples é **sincronizar uma instância já configurada** a partir de uma máquina de dev (traz config + secrets + snapshots de baseline):
+
+```sh
+# --- a partir da máquina de dev (Mac/Linux) ---
+rsync -az --exclude='*.log' --exclude='.DS_Store' \
+  openclaw/ root@<IP>:/root/2026-ei-aoopii-c26/openclaw/
+rsync -az docs/ root@<IP>:/root/2026-ei-aoopii-c26/docs/
+```
+
+Depois, **reescrever os paths absolutos** na config (foram gravados para a máquina de dev):
+
+```sh
+# --- no Droplet ---
+cd ~/2026-ei-aoopii-c26/openclaw
+sed -i 's#/Users/<user>/Documents/GitHub#/root#g' config/openclaw.json   # ou /home/<user>/...
+```
+
+> ⚠️ Não corras `make onboard`/`make setup` no Droplet: regeneram o `config/openclaw.json` e apagam a config afinada (provider/modelo, paths). Usa a config que veio no rsync.
+
+Testar antes do cron:
+
+```sh
+export OPENCLAW_STATE_DIR="$PWD/state" OPENCLAW_CONFIG_PATH="$PWD/config/openclaw.json"
+make smoke                                   # modelo responde?
+agent-browser open https://zed.dev/releases && agent-browser get text body | head; agent-browser close
+./workspace/scripts/weekly.sh                # pipeline inteiro
+```
+
+Cron semanal (o cron tem PATH mínimo — usa um wrapper):
+
+```sh
+cat > /root/run-briefing.sh <<'EOF'
+#!/usr/bin/env bash
+export PATH=/usr/local/bin:/usr/bin:/bin
+cd /root/2026-ei-aoopii-c26/openclaw
+export OPENCLAW_STATE_DIR="$PWD/state" OPENCLAW_CONFIG_PATH="$PWD/config/openclaw.json"
+./workspace/scripts/weekly.sh >> /root/briefing.log 2>&1
+EOF
+chmod +x /root/run-briefing.sh
+( crontab -l 2>/dev/null; echo "0 9 * * 1 /root/run-briefing.sh" ) | crontab -   # 2ª feira 09:00
+```
+
+> A key da OpenRouter (e da Gemini, se usada) vive em **dois sítios**: `.env` **e** `state/agents/main/agent/auth-profiles.json`. Ao rodar a key, atualiza os dois — senão o agente usa a antiga e dá `401`.
 
 ## Notas de segurança
 
