@@ -7,6 +7,7 @@ data/
 *.jpeg
 *.webp
 config/openclaw.json.bak*
+openclaw.patch.local.json5
 
 # workspace/reports is versioned (briefings are intentional output we want to ship).
 # workspace/data, workspace/state etc. stay out via the root .gitignore.

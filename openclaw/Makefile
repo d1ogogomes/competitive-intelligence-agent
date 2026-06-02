@@ -6,8 +6,12 @@ PATCH_LINUX := $(ROOT)/openclaw.patch.json5
 PATCH_MACOS := $(ROOT)/openclaw.patch.macos.json5
 ENV_FILE := $(ROOT)/.env
 
+PATCH_LOCAL := $(ROOT)/openclaw.patch.local.json5
+
 UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
+ifneq ($(wildcard $(PATCH_LOCAL)),)
+  PATCH := $(PATCH_LOCAL)
+else ifeq ($(UNAME_S),Darwin)
   PATCH := $(PATCH_MACOS)
 else
   PATCH := $(PATCH_LINUX)
