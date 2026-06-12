@@ -1,0 +1,6 @@
+provider,privacy_score,data_residency_score,documentation_score,status_sla_score,enterprise_support_score,api_stability_score,sources
+OpenAI,88,85,94,90,94,91,https://platform.openai.com/docs/guides/your-data|https://status.openai.com/
+Anthropic,92,90,94,92,94,94,https://docs.anthropic.com/en/api/service-tiers|https://status.anthropic.com/
+Google / Gemini,92,95,93,93,95,91,https://ai.google.dev/gemini-api/terms|https://cloud.google.com/vertex-ai/generative-ai/docs/models
+xAI,75,70,83,82,76,80,https://docs.x.ai/developers/models|https://status.x.ai/
+Mistral AI,90,95,87,86,88,86,https://docs.mistral.ai/models/|https://status.mistral.ai/

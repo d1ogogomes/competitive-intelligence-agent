@@ -1,7 +1,12 @@
 # Concorrentes
 
 Foco: **frontier model labs** (quem treina e vende os modelos de fundação).
-4 fontes por lab: `models`, `pricing`, `blog` (news), `jobs` (careers).
+As fontes recolhidas vivem no catálogo `scripts/sources.csv`. O catálogo inclui
+documentação oficial de modelos, preços, privacidade, enterprise/SLA, status,
+changelogs, depreciações e model cards, além de benchmarks independentes.
+
+O `scripts/fetch-all.sh` percorre automaticamente esse catálogo. Para adicionar
+ou remover uma fonte basta editar `scripts/sources.csv`.
 
 ## OpenAI
 - Models: https://platform.openai.com/docs/models

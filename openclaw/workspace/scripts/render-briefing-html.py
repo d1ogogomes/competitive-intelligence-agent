@@ -1,595 +1,624 @@
 #!/usr/bin/env python3
-"""render-briefing-html.py
+"""Render the AI Model & Provider Radar as a compact executive dashboard."""
+from __future__ import annotations
 
-Renders a weekly briefing (Markdown) into a rich, "subscription-grade" HTML
-email: hero header, KPI tiles, a ranking leaderboard (medals + activity bars +
-weekly movement), three QuickChart visuals (score bar, rank-evolution line,
-share-of-changes donut), per-lab cards with brand accents, cross-signals, and a
-footer with sources + a subscription CTA.
-
-Charts are QuickChart images (email clients run no JS). Layout uses tables +
-inline styles for Outlook/Gmail compatibility.
-
-Usage:
-  ./render-briefing-html.py <report.md> [ranks.csv] > body.html
-"""
 import csv
+import base64
 import html
 import json
+import os
 import re
+import struct
 import sys
 import urllib.parse
+import zlib
 from pathlib import Path
 
-# Brand colour + favicon domain per lab. Keys MUST match the report headings.
-LABS = {
-    "OpenAI": {"color": "#10a37f", "domain": "openai.com"},
-    "Anthropic": {"color": "#d97757", "domain": "anthropic.com"},
-    "Google / Gemini": {"color": "#4285f4", "domain": "ai.google.dev"},
-    "xAI": {"color": "#111827", "domain": "x.ai"},
-    "Mistral AI": {"color": "#fb6a00", "domain": "mistral.ai"},
+INK = "#111827"
+MUTED = "#64748b"
+HAIR = "#e5e7eb"
+BG = "#f3f4f6"
+BLUE = "#2563eb"
+GREEN = "#16a34a"
+YELLOW = "#ca8a04"
+RED = "#dc2626"
+SLATE = "#475569"
+
+SOURCE_LABELS = {
+    "OpenAI": "OpenAI Docs",
+    "Anthropic": "Anthropic Docs",
+    "Google / Gemini": "Gemini Docs",
+    "xAI": "xAI Docs",
+    "Mistral AI": "Mistral Docs",
 }
-MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
-# Stated, transparent scoring formula (kept in sync with compute-metrics.py).
-WEIGHTS_NOTE = "3×modelos novos + 2×preços alterados + 1×changelog + 1×novidades no blog + 0,5×Δ vagas (cap 10)"
+
+FULL_SOURCES = {
+    "OpenAI": ["https://openai.com/api/pricing/", "https://platform.openai.com/docs/models", "https://developers.openai.com/api/docs/changelog"],
+    "Anthropic": ["https://docs.anthropic.com/en/docs/about-claude/pricing", "https://docs.anthropic.com/en/docs/about-claude/models/overview", "https://www.anthropic.com/news"],
+    "Google / Gemini": ["https://ai.google.dev/gemini-api/docs/pricing", "https://ai.google.dev/gemini-api/docs/models", "https://ai.google.dev/gemini-api/docs/changelog"],
+    "xAI": ["https://docs.x.ai/developers/models", "https://docs.x.ai/developers/pricing", "https://docs.x.ai/docs/release-notes"],
+    "Mistral AI": ["https://mistral.ai/pricing/", "https://docs.mistral.ai/models/", "https://docs.mistral.ai/resources/changelogs"],
+    "Benchmarks": ["https://artificialanalysis.ai/leaderboards/models/", "https://lmarena.ai/leaderboard", "https://www.swebench.com/", "https://aider.chat/docs/leaderboards/"],
+}
+
+AA_INTELLIGENCE = {
+    "Claude Fable 5": 64.9,
+    "GPT-5.5": 60.2,
+    "Gemini 3.5 Flash": 55.3,
+    "Grok 4.3": 53.2,
+    "Mistral Medium 3.5": 39.2,
+}
 
 
-# Per-source signal columns from metrics.csv, for the activity heatmap.
-SOURCE_COLS = ["new_models", "price_changes", "changelog_updates", "blog_updates", "job_delta"]
-SOURCE_LABELS = {"new_models": "Modelos", "price_changes": "Preços", "changelog_updates": "Changelog",
-                 "blog_updates": "Blog", "job_delta": "Vagas"}
+def esc(value: object) -> str:
+    return html.escape("" if value is None else str(value))
 
 
-def favicon(domain):
-    return f"https://www.google.com/s2/favicons?domain={domain}&sz=64"
+def num(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
 
 
-def inline(text):
-    out = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", html.escape(text))
-    # Linkify bare URLs (e.g. the "Fonte: https://..." citations).
-    out = re.sub(r"(https?://[^\s<)\"]+)", r'<a href="\1" style="color:#2563eb">\1</a>', out)
-    return out
+def money(value: object) -> str:
+    return f"${num(value):g}"
 
 
-URL_RE = re.compile(r"https?://")
+def ctx(value: object) -> str:
+    n = int(num(value))
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:g}M"
+    if n >= 1000:
+        return f"{n // 1000}k"
+    return str(n)
 
 
-def info_for(name):
-    return LABS.get(name.strip())
-
-
-def color_for(name):
-    i = info_for(name)
-    return i["color"] if i else "#6b7280"
-
-
-def logo_for(name):
-    i = info_for(name)
-    return favicon(i["domain"]) if i else None
-
-
-def week_key(week):
-    m = re.search(r"(\d{4})-W(\d{1,2})", week)
-    return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
-
-
-def chart_img(config, w=620, h=300, alt="", style=""):
-    encoded = urllib.parse.quote(json.dumps(config, ensure_ascii=False))
-    url = f"https://quickchart.io/chart?v=4&bkg=white&w={w}&h={h}&c={encoded}"
-    base = "max-width:100%;height:auto;border:1px solid #e7ebef;border-radius:8px;" + style
-    return f'<img src="{url}" width="{w}" alt="{html.escape(alt)}" style="{base}">'
-
-
-# ----------------------------- parsing --------------------------------------
-
-def load_ranks(csv_path):
-    rows = []
-    if csv_path and Path(csv_path).is_file():
-        with open(csv_path, newline="", encoding="utf-8") as fh:
-            for r in csv.DictReader(fh):
-                try:
-                    r["score"] = int(r["score"]); r["rank"] = int(r["rank"])
-                except (ValueError, KeyError):
-                    continue
-                rows.append(r)
+def read_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    rows.sort(key=lambda r: num(r.get("model_score")), reverse=True)
     return rows
 
 
-def load_metrics(csv_path, week):
-    """lab -> {source_col: int} for the given week."""
-    out = {}
-    if csv_path and Path(csv_path).is_file():
-        with open(csv_path, newline="", encoding="utf-8") as fh:
-            for r in csv.DictReader(fh):
-                if r.get("week") != week:
-                    continue
-                out[r["lab"]] = {c: int(float(r.get(c, 0) or 0)) for c in SOURCE_COLS}
-    return out
+def week_from_report(path: Path, md: str) -> str:
+    match = re.search(r"(\d{4}-W\d{2})", md) or re.search(r"(\d{4}-W\d{2})", path.name)
+    return match.group(1) if match else ""
 
 
-def load_pricing(csv_path, week):
-    rows = []
-    if csv_path and Path(csv_path).is_file():
-        with open(csv_path, newline="", encoding="utf-8") as fh:
-            for r in csv.DictReader(fh):
-                if r.get("week") != week:
-                    continue
-                try:
-                    r["input_per_1m"] = float(r["input_per_1m"])
-                except (ValueError, KeyError):
-                    continue
-                r["output_per_1m"] = float(r["output_per_1m"]) if r.get("output_per_1m") not in (None, "") else None
-                rows.append(r)
-    return rows
-
-
-def heatmap(metrics_by_lab):
-    """Activity heatmap: labs x sources, cells shaded by intensity. Pure HTML/CSS."""
-    if not metrics_by_lab:
-        return ""
-    labs = [l for l in LABS if l in metrics_by_lab]
-    if not labs:
-        return ""
-    head = ('<tr style="color:#5d6975;font-size:11px;text-transform:uppercase;letter-spacing:.4px">'
-            '<th style="padding:6px;text-align:left">Lab</th>'
-            + "".join(f'<th style="padding:6px 4px">{SOURCE_LABELS[c]}</th>' for c in SOURCE_COLS) + '</tr>')
-    rows = []
-    for lab in labs:
-        cells = []
-        for c in SOURCE_COLS:
-            v = metrics_by_lab[lab].get(c, 0)
-            # shade by intensity (0 = empty, higher = more saturated brand colour)
-            if v <= 0:
-                bg, fg, txt = "#f1f4f7", "#c2cad2", "·"
-            else:
-                alpha = min(1.0, 0.30 + 0.18 * v)
-                bg, fg, txt = _rgba(color_for(lab), alpha), "#ffffff", str(v)
-            cells.append(f'<td style="padding:0"><div style="background:{bg};color:{fg};'
-                         f'text-align:center;font-weight:700;font-size:13px;padding:12px 4px;'
-                         f'margin:2px;border-radius:5px">{txt}</div></td>')
-        logo = logo_for(lab)
-        limg = (f'<img src="{logo}" width="16" height="16" style="vertical-align:middle;'
-                f'border-radius:3px;margin-right:6px" alt="">' if logo else "")
-        rows.append(f'<tr><td style="padding:4px 6px;white-space:nowrap;font-weight:600;font-size:13px">'
-                    f'{limg}{html.escape(lab)}</td>' + "".join(cells) + '</tr>')
-    return ('<table style="width:100%;border-collapse:collapse">'
-            f'<thead>{head}</thead><tbody>' + "".join(rows) + '</tbody></table>')
-
-
-def _rgba(hex_color, alpha):
-    h = hex_color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return f"rgba({r},{g},{b},{alpha:.2f})"
-
-
-def pricing_block(pricing_rows):
-    """Cross-lab price comparison: bar of flagship input $/1M + a per-lab table.
-    Shows only labs with reliably extracted token pricing (transparent coverage)."""
-    if not pricing_rows:
-        return ""
-    labs = [l for l in LABS if any(r["lab"] == l for r in pricing_rows)]
-    flagship = {}
-    for lab in labs:
-        rs = [r for r in pricing_rows if r["lab"] == lab]
-        fl = next((r for r in rs if r.get("flagship") == "1"), None) or max(rs, key=lambda r: r["input_per_1m"])
-        flagship[lab] = fl
-
-    bar = chart_img({
-        "type": "bar",
-        "data": {"labels": labs,
-                 "datasets": [{"label": "$ / 1M tokens (input)",
-                               "data": [round(flagship[l]["input_per_1m"], 2) for l in labs],
-                               "backgroundColor": [color_for(l) for l in labs], "borderRadius": 6}]},
-        "options": {"indexAxis": "y", "plugins": {"legend": {"display": False},
-                    "title": {"display": True, "text": "Preço input do modelo flagship ($/1M tokens)", "font": {"size": 13}}}},
-    }, w=620, h=210, alt="Comparação de preços", style="margin:0 0 8px")
-
-    trows = []
-    for lab in labs:
-        fl = flagship[lab]
-        out = f'${fl["output_per_1m"]:.2f}' if fl["output_per_1m"] is not None else "—"
-        logo = logo_for(lab)
-        limg = (f'<img src="{logo}" width="16" height="16" style="vertical-align:middle;'
-                f'border-radius:3px;margin-right:6px" alt="">' if logo else "")
-        trows.append(f'<tr style="border-bottom:1px solid #eef1f4">'
-                     f'<td style="padding:7px 6px;font-weight:600">{limg}{html.escape(lab)}</td>'
-                     f'<td style="padding:7px 6px;color:#5d6975">{html.escape(fl["model"])}</td>'
-                     f'<td style="padding:7px 6px;text-align:right;font-weight:700">${fl["input_per_1m"]:.2f}</td>'
-                     f'<td style="padding:7px 6px;text-align:right">{out}</td></tr>')
-    table = ('<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:4px">'
-             '<thead><tr style="color:#5d6975;font-size:11px;text-transform:uppercase;letter-spacing:.4px">'
-             '<th style="padding:6px;text-align:left">Lab</th><th style="padding:6px;text-align:left">Flagship</th>'
-             '<th style="padding:6px;text-align:right">Input /1M</th><th style="padding:6px;text-align:right">Output /1M</th>'
-             '</tr></thead><tbody>' + "".join(trows) + '</tbody></table>')
-
-    missing = [l for l in LABS if l not in labs]
-    note = (f'<p style="color:#9aa4af;font-size:11px;margin:6px 0 0">Cobertura de preços: {", ".join(labs)}. '
-            f'Sem dados fiáveis: {", ".join(missing)} (página protegida ou sem pricing de API por token).</p>') if missing else ""
-    return bar + table + note
-
-
-NO_CHANGE = "sem alteraç"
-
-
-def parse_report(text):
-    """Extract title, resumo, per-lab sections, cross-signals and sources."""
-    data = {"title": "", "resumo": [], "sinais": [], "fontes": [], "labs": {}}
-    cur_h2 = None
-    cur_lab = None
-    cur_sub = None  # 'mudou' | 'importa' | 'fazer'
-    for raw in text.splitlines():
-        line = raw.rstrip()
-        s = line.strip()
-        if not s:
-            continue
-        if s.startswith("# ") and not data["title"]:
-            data["title"] = s[2:].strip()
-            continue
-        if s.startswith("## "):
-            cur_h2 = s[3:].strip()
-            low = cur_h2.lower()
-            if cur_h2 in LABS:
-                cur_lab = cur_h2
-                data["labs"][cur_lab] = {"mudou": [], "importa": [], "fazer": []}
-            else:
-                cur_lab = None
-            cur_sub = None
-            data["_h2low"] = low
-            continue
-        if s.startswith("### "):
-            sub = s[4:].strip().lower()
-            if "mudou" in sub:
-                cur_sub = "mudou"
-            elif "importa" in sub:
-                cur_sub = "importa"
-            elif "fazer" in sub or "watch" in sub:
-                cur_sub = "fazer"
-            elif "relev" in sub:  # backward compat with old reports
-                cur_sub = "importa"
-            else:
-                cur_sub = None
-            continue
-        # content line
-        text_line = s[2:].strip() if s.startswith("- ") else s
-        is_bullet = s.startswith("- ")
-        low = data.get("_h2low", "")
-        if cur_lab:
-            if cur_sub == "mudou" and is_bullet and NO_CHANGE not in text_line.lower():
-                data["labs"][cur_lab]["mudou"].append(text_line)
-            elif cur_sub == "importa":
-                data["labs"][cur_lab]["importa"].append(text_line)
-            elif cur_sub == "fazer":
-                data["labs"][cur_lab]["fazer"].append(text_line)
-        elif low.startswith("resumo") and is_bullet:
-            data["resumo"].append(text_line)
-        elif "sinais" in low and is_bullet:
-            data["sinais"].append(text_line)
-        elif "fonte" in low and is_bullet:
-            data["fontes"].append(text_line)
-    return data
-
-
-# --------------------------- HTML building ----------------------------------
-
-def kpi_tile(value, label, accent):
+def badge(label: str, color: str = BLUE) -> str:
     return (
-        f'<td class="kpi" style="padding:6px;vertical-align:top" width="25%"><div style="background:#ffffff;border:1px solid #e7ebef;'
-        f'border-top:3px solid {accent};border-radius:8px;padding:14px 12px;text-align:center">'
-        f'<div style="font-size:22px;font-weight:800;color:#101820;line-height:1.1">{value}</div>'
-        f'<div style="font-size:11px;color:#5d6975;text-transform:uppercase;letter-spacing:.4px;margin-top:5px">{label}</div>'
-        f'</div></td>'
+        f'<span style="display:inline-block;padding:4px 8px;border-radius:999px;'
+        f'font-size:10px;font-weight:800;letter-spacing:.04em;color:{color};'
+        f'background:{color}14;border:1px solid {color}35;white-space:nowrap">{esc(label)}</span>'
     )
 
 
-def leaderboard(cur, prev_rank):
-    rows = []
-    for r in cur:
-        lab = r["lab"]
-        medal = MEDALS.get(r["rank"], f'<span style="color:#9aa4af">{r["rank"]}</span>')
-        logo = logo_for(lab)
-        limg = (f'<img src="{logo}" width="18" height="18" style="vertical-align:middle;'
-                f'border-radius:4px;margin-right:7px" alt="">' if logo else "")
-        bar_w = max(4, r["score"] * 10)
-        bar = (f'<div style="background:#eceff3;border-radius:6px;height:16px;min-width:90px">'
-               f'<div style="background:{color_for(lab)};height:16px;border-radius:6px;width:{bar_w}%"></div></div>')
-        if lab in prev_rank:
-            d = prev_rank[lab] - r["rank"]
-            mv = (f'<span style="color:#1a9c52;font-weight:700">▲{d}</span>' if d > 0 else
-                  f'<span style="color:#d23b3b;font-weight:700">▼{abs(d)}</span>' if d < 0 else
-                  '<span style="color:#9aa4af">—</span>')
-        else:
-            mv = '<span style="color:#3b82f6;font-weight:700">novo</span>'
-        rows.append(
-            f'<tr style="border-bottom:1px solid #eef1f4">'
-            f'<td style="padding:10px 6px;text-align:center;font-size:18px;width:34px">{medal}</td>'
-            f'<td style="padding:10px 6px;white-space:nowrap;font-weight:600">{limg}{html.escape(lab)}</td>'
-            f'<td style="padding:10px 6px;width:40%">{bar}</td>'
-            f'<td style="padding:10px 6px;text-align:right;font-weight:800;width:34px">{r["score"]}</td>'
-            f'<td style="padding:10px 6px;text-align:center;width:52px">{mv}</td>'
-            f'<td class="hide-sm" style="padding:10px 6px;color:#5d6975;font-size:13px">{html.escape(r.get("destaque",""))}</td>'
-            f'</tr>')
+def model_badges(r: dict[str, str]) -> str:
+    labels: list[tuple[str, str]] = []
+    status = (r.get("status") or "").upper()
+    labels.append((status or "N/D", GREEN if status == "STABLE" else YELLOW if status == "PREVIEW" else RED))
+    if num(r.get("output_price_per_1m")) <= 3:
+        labels.append(("LOW COST", GREEN))
+    if num(r.get("context_window")) >= 1_000_000:
+        labels.append(("HIGH CONTEXT", BLUE))
+    if any(x in (r.get("modalities") or "") for x in ("image", "audio", "video")):
+        labels.append(("MULTIMODAL", BLUE))
+    if "Mistral" in r.get("provider", ""):
+        labels.append(("EU OPEN WEIGHT", GREEN))
+    if num(r.get("output_price_per_1m")) >= 25:
+        labels.append(("HIGH OUTPUT COST", RED))
+    return " ".join(badge(label, color) for label, color in labels[:4])
+
+
+def status_color(r: dict[str, str]) -> str:
+    status = (r.get("status") or "").upper()
+    if status == "STABLE":
+        return GREEN
+    if status == "PREVIEW":
+        return YELLOW
+    return RED
+
+
+def production_score(r: dict[str, str]) -> float:
+    status = (r.get("status") or "").lower()
+    score = num(r.get("model_score"))
+    if status == "stable":
+        return score
+    if status == "preview":
+        return score - 18
+    return score - 100
+
+
+def intelligence_score(r: dict[str, str]) -> float:
+    return AA_INTELLIGENCE.get(r.get("model_name", ""), num(r.get("model_score")))
+
+
+def kpi_card(title: str, value: str, note: str, color: str = BLUE) -> str:
     return (
-        '<table class="lb" style="width:100%;border-collapse:collapse;font-size:14px;margin:4px 0 8px">'
-        '<thead><tr style="border-bottom:2px solid #e7ebef;color:#5d6975;font-size:11px;'
-        'text-transform:uppercase;letter-spacing:.5px">'
-        '<th style="padding:6px;text-align:center">#</th><th style="padding:6px;text-align:left">Lab</th>'
-        '<th style="padding:6px;text-align:left">Atividade</th><th style="padding:6px;text-align:right">Score</th>'
-        '<th style="padding:6px;text-align:center">Δ</th><th class="hide-sm" style="padding:6px;text-align:left">Destaque</th>'
-        '</tr></thead><tbody>' + "".join(rows) + '</tbody></table>')
+        '<td style="width:25%;padding:6px;vertical-align:top">'
+        f'<div style="background:#fff;border:1px solid {HAIR};border-radius:16px;padding:14px;min-height:84px">'
+        f'<div style="font-size:26px;font-weight:900;color:{color};line-height:1.05">{esc(value)}</div>'
+        f'<div style="font-size:11px;color:{MUTED};font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-top:8px">{esc(title)}</div>'
+        f'<div style="font-size:12px;color:{MUTED};margin-top:6px;line-height:1.3">{esc(note)}</div>'
+        '</div></td>'
+    )
 
 
-def lab_cards(report, score_by_lab, breakdown_by_lab):
-    cells = []
-    for lab in LABS:
-        sec = report["labs"].get(lab)
-        if not sec:
-            continue
-        color = color_for(lab)
-        logo = logo_for(lab)
-        limg = (f'<img src="{logo}" width="22" height="22" style="vertical-align:middle;'
-                f'border-radius:5px;margin-right:8px" alt="">' if logo else "")
-        score = score_by_lab.get(lab)
-        badge = (f'<span style="background:{color};color:#fff;font-size:12px;font-weight:700;'
-                 f'border-radius:12px;padding:2px 9px">{score}</span>' if score is not None else "")
-        bullets = sec["mudou"][:4]
-        if bullets:
-            items = "".join(f'<li style="margin:4px 0;line-height:1.45">{inline(b)}</li>' for b in bullets)
-            body = f'<ul style="margin:8px 0 0;padding-left:18px;font-size:13px;color:#2b3640">{items}</ul>'
+def decision_card(label: str, title: str, r: dict[str, str], reason: str, color: str) -> str:
+    return (
+        '<td style="width:25%;padding:6px;vertical-align:top">'
+        f'<div style="background:#fff;border:1px solid {color}33;border-radius:16px;padding:14px;min-height:118px">'
+        f'<div style="font-size:11px;font-weight:900;color:{color};text-transform:uppercase;letter-spacing:.06em">{esc(label)}</div>'
+        f'<div style="font-size:13px;font-weight:900;color:{color};margin-top:3px">{esc(title)}</div>'
+        f'<div style="font-size:15px;font-weight:900;color:{INK};margin-top:8px;line-height:1.2">{esc(r.get("model_name"))}</div>'
+        f'<div style="font-size:12px;color:{MUTED};margin-top:2px">{esc(r.get("provider"))}</div>'
+        f'<div style="font-size:12px;color:{INK};margin-top:9px;line-height:1.35">{esc(reason)}</div>'
+        '</div></td>'
+    )
+
+
+def bar_row(prefix: str, label: str, value: float, max_value: float, suffix: str, color: str) -> str:
+    width = max(5, min(100, round(value / max_value * 100))) if max_value else 5
+    return (
+        '<tr>'
+        f'<td style="width:245px;padding:7px 10px 7px 0;font-size:13px;color:{INK};white-space:nowrap"><strong>{esc(prefix)}</strong> {esc(label)}</td>'
+        '<td style="padding:7px 0;width:100%">'
+        f'<div style="height:12px;background:#e2e8f0;border-radius:999px;overflow:hidden">'
+        f'<div style="height:12px;width:{width}%;background:{color};border-radius:999px"></div>'
+        '</div></td>'
+        f'<td style="width:56px;padding:7px 0 7px 10px;font-size:13px;font-weight:900;color:{INK};white-space:nowrap">{esc(suffix)}</td>'
+        '</tr>'
+    )
+
+
+def score_bar_row(prefix: str, r: dict[str, str], value: float, max_value: float, suffix: str) -> str:
+    width = max(5, min(100, round(value / max_value * 100))) if max_value else 5
+    return (
+        '<tr>'
+        f'<td style="width:255px;padding:7px 10px 7px 0;font-size:13px;color:{INK};white-space:nowrap"><strong>{esc(prefix)}</strong> {esc(r.get("model_name"))}</td>'
+        '<td style="padding:7px 0;width:100%">'
+        f'<div style="height:12px;background:#e2e8f0;border-radius:999px;overflow:hidden">'
+        f'<div style="height:12px;width:{width}%;background:{status_color(r)};border-radius:999px"></div>'
+        '</div></td>'
+        f'<td style="width:58px;padding:7px 0 7px 10px;font-size:13px;font-weight:900;color:{INK};white-space:nowrap">{esc(suffix)}</td>'
+        f'<td style="width:78px;padding:7px 0 7px 8px">{badge((r.get("status") or "").upper(), status_color(r))}</td>'
+        '</tr>'
+    )
+
+
+def pick(rows: list[dict[str, str]], pred, default: dict[str, str]) -> dict[str, str]:
+    return next((r for r in rows if pred(r)), default)
+
+
+def top_pick(label: str, r: dict[str, str], metric: str) -> str:
+    return (
+        '<td style="width:50%;padding:6px;vertical-align:top">'
+        f'<div style="background:#fff;border:1px solid {HAIR};border-radius:14px;padding:12px">'
+        f'<div style="font-size:10px;color:{MUTED};font-weight:900;text-transform:uppercase;letter-spacing:.06em">{esc(label)}</div>'
+        f'<div style="font-size:14px;font-weight:900;color:{INK};margin-top:6px">{esc(r.get("model_name"))}</div>'
+        f'<div style="font-size:12px;color:{MUTED};margin-top:2px">{esc(r.get("provider"))}</div>'
+        f'<div style="margin-top:8px">{badge(metric, BLUE)} {badge((r.get("status") or "").upper(), status_color(r))}</div>'
+        '</div></td>'
+    )
+
+
+def compact_row(r: dict[str, str]) -> str:
+    return (
+        f'<div style="background:#fff;border:1px solid {HAIR};border-radius:14px;padding:12px;margin-top:8px">'
+        f'<strong>{esc(r.get("model_name"))}</strong> <span style="color:{MUTED}">· {esc(r.get("provider"))}</span>'
+        f'<div style="font-size:12px;color:{MUTED};margin-top:5px">{money(r.get("input_price_per_1m"))} input · {money(r.get("output_price_per_1m"))} output · {ctx(r.get("context_window"))} context · {esc((r.get("status") or "").lower())} · {esc(short_use(r))}</div>'
+        '</div>'
+    )
+
+
+def short_use(r: dict[str, str]) -> str:
+    text = (r.get("best_use_case") or "").lower()
+    if "open-weight" in text or "europeia" in text:
+        return "EU open weight"
+    if "custo" in text:
+        return "cost/context"
+    if "multimodal" in text:
+        return "multimodal"
+    if "coding" in text or "código" in text:
+        return "coding"
+    return "premium"
+
+
+def ranking_cards(rows: list[dict[str, str]], score_key: str = "model_score") -> str:
+    cards = []
+    for idx, r in enumerate(rows, 1):
+        if score_key == "production":
+            score = production_score(r)
+        elif score_key == "intelligence":
+            score = intelligence_score(r)
         else:
-            body = '<p style="margin:8px 0 0;font-size:13px;color:#9aa4af">Sem alterações relevantes esta semana.</p>'
-        importa = " ".join(sec.get("importa", [])).strip()
-        importa_html = (f'<p style="margin:10px 0 0;font-size:12px;color:#5d6975">'
-                        f'<strong style="color:{color}">Porque importa:</strong> {inline(importa)}</p>'
-                        ) if importa and importa.lower() != "n/a" else ""
-        fazer = [x for x in sec.get("fazer", []) if x and x.lower() != "n/a"]
-        if fazer:
-            fitems = "".join(f'<li style="margin:3px 0;line-height:1.4">{inline(x)}</li>' for x in fazer[:3])
-            fazer_html = (f'<p style="margin:10px 0 2px;font-size:12px;color:{color};font-weight:600">O que fazer</p>'
-                          f'<ul style="margin:0;padding-left:18px;font-size:12px;color:#5d6975">{fitems}</ul>')
-        else:
-            fazer_html = ""
-        bd = breakdown_by_lab.get(lab)
-        metric_html = (f'<div style="margin:10px 0 0;padding-top:8px;border-top:1px dashed #e7ebef;'
-                       f'font-size:11px;color:#8a949e">📊 Sinais medidos: {html.escape(bd)}</div>') if bd else ""
-        header = (
-            f'<table width="100%" style="border-collapse:collapse"><tr>'
-            f'<td style="font-size:15px;font-weight:700;color:#101820">{limg}{html.escape(lab)}</td>'
-            f'<td align="right" style="white-space:nowrap">{badge}</td></tr></table>')
-        cells.append(
-            f'<td class="stack" width="50%" valign="top" style="padding:8px">'
-            f'<div style="background:#fff;border:1px solid #e7ebef;border-left:4px solid {color};'
-            f'border-radius:8px;padding:14px 16px">'
-            f'{header}{body}{importa_html}{fazer_html}{metric_html}</div></td>')
-    # pack 2 per row
-    rows = []
-    for i in range(0, len(cells), 2):
-        pair = cells[i:i + 2]
-        if len(pair) == 1:
-            pair.append('<td class="stack" width="50%"></td>')
-        rows.append("<tr>" + "".join(pair) + "</tr>")
-    return ('<table style="width:100%;border-collapse:collapse;table-layout:fixed">'
-            + "".join(rows) + "</table>")
+            score = num(r.get("model_score"))
+        cards.append(
+            '<td style="width:50%;padding:6px;vertical-align:top">'
+            f'<div style="background:#fff;border:1px solid {HAIR};border-radius:14px;padding:13px">'
+            f'<div style="font-size:12px;color:{MUTED};font-weight:900">#{idx}</div>'
+            f'<div style="font-size:15px;font-weight:900;color:{INK};margin-top:3px">{esc(r.get("model_name"))}</div>'
+            f'<div style="font-size:12px;color:{MUTED};margin-top:4px">{esc(r.get("provider"))} · {score:g} · {money(r.get("input_price_per_1m"))}/{money(r.get("output_price_per_1m"))} · {ctx(r.get("context_window"))} · {badge((r.get("status") or "").upper(), status_color(r))}</div>'
+            f'<div style="font-size:12px;color:{INK};margin-top:8px">Uso: {esc(short_use(r))}</div>'
+            '</div></td>'
+        )
+    return '<table role="presentation" width="100%" cellspacing="0" cellpadding="0">' + "".join(
+        "<tr>" + "".join(cards[i:i + 2]) + "</tr>" for i in range(0, len(cards), 2)
+    ) + "</table>"
 
 
-def bullet_block(title, items, accent="#101820"):
-    if not items:
-        return ""
-    lis = "".join(f'<li style="margin:6px 0;line-height:1.5">{inline(b)}</li>' for b in items)
-    return (f'<h2 class="sec">{title}</h2>'
-            f'<ul style="margin:8px 0 4px;padding-left:20px;font-size:14px;color:#2b3640">{lis}</ul>')
+def hex_rgb(value: str) -> tuple[int, int, int]:
+    value = value.lstrip("#")
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def build(report, ranks, current_week, metrics_by_lab=None, pricing_rows=None):
-    metrics_by_lab = metrics_by_lab or {}
-    pricing_rows = pricing_rows or []
-    weeks = sorted({r["week"] for r in ranks}, key=week_key)
-    if weeks and current_week not in weeks:
-        current_week = weeks[-1]
-    prev_week = None
-    if current_week in weeks:
-        i = weeks.index(current_week)
-        prev_week = weeks[i - 1] if i > 0 else None
-    cur = sorted([r for r in ranks if r["week"] == current_week], key=lambda r: r["rank"])
-    prev_rank = {r["lab"]: r["rank"] for r in ranks if r["week"] == prev_week} if prev_week else {}
-    score_by_lab = {r["lab"]: r["score"] for r in cur}
-    breakdown_by_lab = {r["lab"]: r.get("destaque", "") for r in cur}
+def png_bytes(width: int, height: int, pixels: bytearray) -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
-    # --- derived metrics ---
-    changes = {lab: len(report["labs"].get(lab, {}).get("mudou", [])) for lab in LABS}
-    total_changes = sum(changes.values())
-    labs_with_news = sum(1 for v in changes.values() if v > 0)
-    most_active = cur[0]["lab"] if cur else "—"
-    # biggest climber
-    climber, climb_val = None, 0
-    for r in cur:
-        if r["lab"] in prev_rank:
-            d = prev_rank[r["lab"]] - r["rank"]
-            if d > climb_val:
-                climb_val, climber = d, r["lab"]
-    climber_txt = f'{climber} ▲{climb_val}' if climber else "—"
+    stride = width * 3
+    raw = b"".join(b"\x00" + bytes(pixels[y * stride:(y + 1) * stride]) for y in range(height))
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
 
-    has_data = total_changes > 0 or any(s > 0 for s in score_by_lab.values())
 
-    # --- citation coverage (trust signal) ---
-    all_bullets = [b for lab in LABS for b in report["labs"].get(lab, {}).get("mudou", [])]
-    cited = sum(1 for b in all_bullets if URL_RE.search(b))
-    cite_total = len(all_bullets)
+def draw_rect(pixels: bytearray, width: int, height: int, x0: int, y0: int, x1: int, y1: int, color: tuple[int, int, int]) -> None:
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(width - 1, x1), min(height - 1, y1)
+    for y in range(y0, y1 + 1):
+        row = y * width * 3
+        for x in range(x0, x1 + 1):
+            i = row + x * 3
+            pixels[i:i + 3] = bytes(color)
 
-    # --- charts ---
-    labs_present = [l for l in LABS if any(r["lab"] == l for r in ranks)]
-    colors = [color_for(l) for l in labs_present]
 
-    score_bar = chart_img({
-        "type": "bar",
-        "data": {"labels": labs_present,
-                 "datasets": [{"label": "Score", "data": [score_by_lab.get(l, 0) for l in labs_present],
-                               "backgroundColor": colors, "borderRadius": 6}]},
-        "options": {"indexAxis": "y",
-                    "plugins": {"legend": {"display": False},
-                                "title": {"display": True, "text": "Score de atividade da semana (0-10)", "font": {"size": 13}}},
-                    "scales": {"x": {"min": 0, "max": 10, "ticks": {"stepSize": 2}}}},
-    }, w=300, h=230, alt="Score por lab", style="margin:0")
+def draw_circle(pixels: bytearray, width: int, height: int, cx: int, cy: int, radius: int, color: tuple[int, int, int]) -> None:
+    r2 = radius * radius
+    for y in range(max(0, cy - radius), min(height - 1, cy + radius) + 1):
+        row = y * width * 3
+        for x in range(max(0, cx - radius), min(width - 1, cx + radius) + 1):
+            if (x - cx) ** 2 + (y - cy) ** 2 <= r2:
+                i = row + x * 3
+                pixels[i:i + 3] = bytes(color)
 
-    donut = chart_img({
-        "type": "doughnut",
-        "data": {"labels": labs_present,
-                 "datasets": [{"data": [changes.get(l, 0) for l in labs_present], "backgroundColor": colors}]},
-        "options": {"plugins": {"legend": {"position": "right", "labels": {"boxWidth": 12, "font": {"size": 10}}},
-                                "title": {"display": True, "text": "Quota de mudanças detetadas", "font": {"size": 13}}}},
-    }, w=300, h=230, alt="Quota de mudanças", style="margin:0")
 
-    line_datasets = []
-    for lab in labs_present:
-        per = {r["week"]: r["rank"] for r in ranks if r["lab"] == lab}
-        line_datasets.append({"label": lab, "data": [per.get(w) for w in weeks],
-                              "borderColor": color_for(lab), "backgroundColor": color_for(lab),
-                              "fill": False, "spanGaps": True, "lineTension": 0.3,
-                              "pointRadius": 4, "borderWidth": 3})
-    rank_line = chart_img({
-        "type": "line",
-        "data": {"labels": weeks, "datasets": line_datasets},
-        "options": {"plugins": {"legend": {"position": "bottom", "labels": {"boxWidth": 12, "font": {"size": 11}}},
-                                "title": {"display": True, "text": "Evolução do ranking semanal (1 = mais ativo)", "font": {"size": 13}}},
-                    "scales": {"y": {"reverse": True, "min": 1, "max": max(2, len(labs_present)),
-                                      "ticks": {"stepSize": 1, "precision": 0}, "title": {"display": True, "text": "Rank"}}}},
-    }, w=620, h=300, alt="Evolução do ranking semanal")
+def scatter_png(rows: list[dict[str, str]]) -> bytes:
+    width, height = 1080, 560
+    left, top, right, bottom = 88, 44, 48, 82
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    pixels = bytearray(hex_rgb("#ffffff") * (width * height))
+    draw_rect(pixels, width, height, left, top, width - right, height - bottom, hex_rgb("#f8fafc"))
 
-    # --- hero highlight: top lab's first bullet, else resumo[0] ---
-    hero = ""
-    if cur:
-        top = cur[0]["lab"]
-        tb = report["labs"].get(top, {}).get("mudou", [])
-        headline = tb[0] if tb else (report["resumo"][0] if report["resumo"] else "")
-        if headline:
-            # Solid background first (Gmail/Outlook strip CSS gradients); gradient layered on top.
-            hero = (f'<div style="background:#101820;'
-                    f'background-image:linear-gradient(135deg,{color_for(top)} 0%,#101820 100%);'
-                    f'color:#ffffff;border-radius:10px;padding:18px 22px;margin:0 0 18px">'
-                    f'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;opacity:.85">🔥 Destaque da semana · {html.escape(top)}</div>'
-                    f'<div style="font-size:17px;font-weight:700;line-height:1.35;margin-top:6px">{inline(headline)}</div></div>')
+    grid = hex_rgb("#e2e8f0")
+    axis = hex_rgb("#64748b")
+    for i in range(6):
+        y = top + round(i * plot_h / 5)
+        draw_rect(pixels, width, height, left, y, width - right, y + 1, grid)
+    for i in range(6):
+        x = left + round(i * plot_w / 5)
+        draw_rect(pixels, width, height, x, top, x + 1, height - bottom, grid)
+    draw_rect(pixels, width, height, left, height - bottom, width - right, height - bottom + 3, axis)
+    draw_rect(pixels, width, height, left, top, left + 3, height - bottom, axis)
 
-    # --- KPI strip ---
-    kpis = (
-        '<table style="width:100%;border-collapse:collapse;margin:0 0 16px"><tr>'
-        + kpi_tile(total_changes, "Mudanças detetadas", "#10a37f")
-        + kpi_tile(html.escape(most_active.split(" / ")[0]), "Lab mais ativo", "#d97757")
-        + kpi_tile(html.escape(climber_txt.split(" ")[0]) + (f' <span style="color:#1a9c52">▲{climb_val}</span>' if climber else ""), "Maior subida", "#4285f4")
-        + kpi_tile(f"{labs_with_news}/{len(LABS)}", "Labs com novidades", "#7c3aed")
-        + '</tr></table>')
+    costs = [num(r.get("output_price_per_1m")) for r in rows]
+    scores = [num(r.get("model_score")) for r in rows]
+    min_cost, max_cost = 0, max(costs) if costs else 1
+    min_score = max(0, min(scores) - 5) if scores else 70
+    max_score = min(100, max(scores) + 3) if scores else 95
+    if max_score <= min_score:
+        max_score = min_score + 1
+    palette = ["#2563eb", "#16a34a", "#f59e0b", "#7c3aed", "#dc2626", "#0f766e"]
+    points: list[tuple[int, int, str]] = []
+    for idx, r in enumerate(rows):
+        cost = num(r.get("output_price_per_1m"))
+        score = num(r.get("model_score"))
+        x = left + round((cost - min_cost) / max(1, max_cost - min_cost) * plot_w)
+        y = top + round((max_score - score) / (max_score - min_score) * plot_h)
+        color = hex_rgb(palette[idx % len(palette)])
+        draw_circle(pixels, width, height, x, y, 18, hex_rgb("#ffffff"))
+        draw_circle(pixels, width, height, x, y, 13, color)
+        points.append((x, y, palette[idx % len(palette)]))
 
-    # --- data section: score bar + rank-evolution line ---
-    if has_data:
-        charts = (f'<div style="margin:4px 0 2px">{score_bar}</div>'
-                  f'<div style="margin:8px 0">{rank_line}</div>')
-    else:
-        note = ('<p style="color:#9aa4af;font-size:12px;margin:4px 0 0">Execução de baseline — '
-                'os gráficos de score ganham forma quando houver mudanças entre semanas.</p>')
-        charts = f'<div style="margin:8px 0">{rank_line}</div>{note}'
+    # Larger corner marks make it clear which direction is better even without text rendering.
+    draw_rect(pixels, width, height, left + 8, top + 8, left + 34, top + 34, hex_rgb("#dcfce7"))
+    draw_rect(pixels, width, height, width - right - 34, height - bottom - 34, width - right - 8, height - bottom - 8, hex_rgb("#fee2e2"))
+    return png_bytes(width, height, pixels)
 
-    price_html = pricing_block(pricing_rows)
-    heat_html = heatmap(metrics_by_lab)
 
-    week_label = current_week or report["title"]
-    title = report["title"] or "Briefing Semanal"
+def scatter_png_data_uri(rows: list[dict[str, str]]) -> str:
+    data = scatter_png(rows)
+    out = os.environ.get("AI_RADAR_CHART_OUT")
+    if out:
+        Path(out).write_bytes(data)
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
 
-    parts = [f"""<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  body {{ margin:0; padding:0; background:#eef1f4; color:#17202a; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }}
-  .wrap {{ max-width:760px; margin:0 auto; padding:24px 14px; }}
-  .card {{ background:#f8fafc; border:1px solid #dfe3e8; border-radius:12px; overflow:hidden; }}
-  .hero {{ background:#101820; color:#fff; padding:26px 28px; }}
-  .brand {{ font-size:13px; letter-spacing:3px; text-transform:uppercase; color:#7fd1b9; font-weight:700; }}
-  .hero h1 {{ margin:8px 0 2px; font-size:25px; }}
-  .hero .sub {{ color:#aab4be; font-size:13px; }}
-  .content {{ padding:22px 26px 8px; }}
-  .sec {{ font-size:16px; margin:24px 0 6px; padding-bottom:6px; border-bottom:2px solid #e7ebef; color:#101820; }}
-  .foot {{ background:#101820; color:#cdd6df; padding:22px 28px; font-size:12px; line-height:1.6; }}
-  .cta {{ display:inline-block; background:#10a37f; color:#fff !important; text-decoration:none; font-weight:700;
-          padding:11px 20px; border-radius:8px; font-size:14px; margin:6px 0; }}
-  a {{ color:#7fd1b9; }}
-  @media only screen and (max-width:600px) {{
-    .wrap {{ padding:12px 8px !important; }}
-    .content {{ padding:16px 14px 6px !important; }}
-    .hero {{ padding:20px 18px !important; }}
-    .hero h1 {{ font-size:21px !important; }}
-    .stack {{ display:block !important; width:100% !important; box-sizing:border-box; padding:4px 0 !important; }}
-    .kpi {{ display:inline-block !important; width:48% !important; box-sizing:border-box; vertical-align:top; }}
-    .lb {{ font-size:12px !important; }}
-    .lb .hide-sm {{ display:none !important; }}
-  }}
-</style></head>
-<body><div class="wrap"><div class="card">
-  <div class="hero">
-    <div class="brand">◆ intelagent · competitive intelligence</div>
-    <h1>{html.escape(title)}</h1>
-    <div class="sub">Frontier model labs · OpenAI · Anthropic · Google/Gemini · xAI</div>
+
+def scatter(rows: list[dict[str, str]]) -> str:
+    palette = ["#2563eb", "#16a34a", "#f59e0b", "#7c3aed", "#dc2626", "#0f766e"]
+    datasets = []
+    legend = []
+    for idx, r in enumerate(rows, 1):
+        cost = num(r.get("output_price_per_1m"))
+        score = intelligence_score(r)
+        color = palette[(idx - 1) % len(palette)]
+        datasets.append({
+            "label": r.get("model_name", ""),
+            "data": [{"x": cost, "y": score}],
+            "pointRadius": 8,
+            "pointHoverRadius": 10,
+            "backgroundColor": color,
+            "borderColor": "#ffffff",
+            "borderWidth": 2,
+        })
+        hover = (
+            f"{r.get('model_name')} | Provider: {r.get('provider')} | "
+            f"Intelligence Index: {score:g} | Output: {money(cost)}/M | "
+            f"Contexto: {ctx(r.get('context_window'))} | Estado: {(r.get('status') or '').upper()}"
+        )
+        legend.append(
+            f'<tr title="{esc(hover)}"><td style="width:16px;padding:4px 6px 4px 0">'
+            f'<span style="display:inline-block;width:11px;height:11px;border-radius:99px;background:{color}"></span></td>'
+            f'<td style="font-size:12px;color:{INK};padding:4px 10px 4px 0"><strong>{esc(r.get("model_name"))}</strong></td>'
+            f'<td style="font-size:12px;color:{MUTED};padding:4px 10px 4px 0">{score:g} intelligence</td>'
+            f'<td style="font-size:12px;color:{MUTED};padding:4px 0">{money(cost)}/M output</td></tr>'
+        )
+    y_min = max(30, min(intelligence_score(r) for r in rows) - 4)
+    y_max = min(70, max(intelligence_score(r) for r in rows) + 4)
+    chart_config = (
+        "{"
+        "type:'scatter',"
+        f"data:{{datasets:{json.dumps(datasets, separators=(',', ':'))}}},"
+        "options:{"
+        "backgroundColor:'white',"
+        "layout:{padding:{top:28,right:28,bottom:12,left:12}},"
+        "plugins:{"
+        "legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},"
+        "title:{display:false},"
+        "datalabels:{align:'top',anchor:'end',offset:4,color:'#111827',font:{size:10,weight:'bold'},formatter:function(value,ctx){return ctx.dataset.label;}}"
+        "},"
+        "scales:{"
+        "x:{type:'linear',min:0,title:{display:true,text:'Preço output / 1M tokens (USD)',font:{size:12,weight:'bold'}},grid:{color:'#e2e8f0'},ticks:{callback:function(v){return '$'+v;}}},"
+        f"y:{{min:{y_min:g},max:{y_max:g},title:{{display:true,text:'Artificial Analysis Intelligence Index',font:{{size:12,weight:'bold'}}}},grid:{{color:'#e2e8f0'}}}}"
+        "}"
+        "}"
+        "}"
+    )
+    uri = "https://quickchart.io/chart?width=900&height=520&version=4&format=png&backgroundColor=white&c=" + urllib.parse.quote(chart_config)
+    hover_summary = " | ".join(f"{r.get('model_name')}: intelligence {intelligence_score(r):g}, output {money(r.get('output_price_per_1m'))}/M" for r in rows)
+    return (
+        f'<div style="background:#fff;border:1px solid {HAIR};border-radius:14px;padding:12px">'
+        f'<div style="font-size:11px;color:{MUTED};font-weight:900;margin-bottom:4px">Y: Intelligence Index · X: preço output / 1M tokens</div>'
+        f'<div style="font-size:12px;color:{INK};margin-bottom:8px"><strong>Melhor zona:</strong> topo esquerdo = maior inteligência com menor custo.</div>'
+        f'<img src="{uri}" title="{esc(hover_summary)}" alt="Custo vs capacidade: scatter plot por modelo" width="100%" style="display:block;width:100%;max-width:760px;border:1px solid #e2e8f0;border-radius:12px;margin:0 auto" />'
+        f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:10px">{"".join(legend)}</table>'
+        f'</div>'
+    )
+
+
+def intelligence_chart(rows: list[dict[str, str]]) -> str:
+    chart_rows = sorted(rows, key=intelligence_score, reverse=True)
+    labels = [r.get("model_name", "") for r in chart_rows]
+    scores = [round(intelligence_score(r), 1) for r in chart_rows]
+    colors = ["#111827", "#2563eb", "#0f766e", "#7c3aed", "#ca8a04"]
+    chart_config = (
+        "{"
+        "type:'bar',"
+        f"data:{{labels:{json.dumps(labels, separators=(',', ':'))},datasets:[{{label:'Intelligence Index',data:{json.dumps(scores, separators=(',', ':'))},backgroundColor:{json.dumps(colors[:len(scores)], separators=(',', ':'))},borderRadius:8,barPercentage:.72}}]}},"
+        "options:{"
+        "indexAxis:'y',"
+        "backgroundColor:'white',"
+        "layout:{padding:{top:12,right:44,bottom:8,left:8}},"
+        "plugins:{legend:{display:false},title:{display:false},datalabels:{anchor:'end',align:'right',color:'#111827',font:{weight:'bold',size:12},formatter:function(v){return v.toFixed(1);}}},"
+        "scales:{x:{min:0,max:70,grid:{color:'#e2e8f0'},title:{display:true,text:'Artificial Analysis Intelligence Index',font:{size:12,weight:'bold'}}},y:{grid:{display:false},ticks:{font:{size:12,weight:'bold'},color:'#111827'}}}"
+        "}"
+        "}"
+    )
+    uri = "https://quickchart.io/chart?width=900&height=420&version=4&format=png&backgroundColor=white&c=" + urllib.parse.quote(chart_config)
+    hover = " | ".join(f"{r.get('model_name')}: {intelligence_score(r):g}" for r in chart_rows)
+    return (
+        f'<div style="background:#fff;border:1px solid {HAIR};border-radius:14px;padding:12px">'
+        f'<div style="font-size:11px;color:{MUTED};font-weight:900;margin-bottom:8px">Fonte: Artificial Analysis Intelligence Index v4.0</div>'
+        f'<img src="{uri}" title="{esc(hover)}" alt="Nível de inteligência por modelo" width="100%" style="display:block;width:100%;max-width:760px;border:1px solid #e2e8f0;border-radius:12px;margin:0 auto" />'
+        f'</div>'
+    )
+
+
+def output_price_chart(rows: list[dict[str, str]]) -> str:
+    chart_rows = sorted(rows, key=lambda r: num(r.get("output_price_per_1m")))
+    labels = [r.get("model_name", "") for r in chart_rows]
+    prices = [round(num(r.get("output_price_per_1m")), 2) for r in chart_rows]
+    colors = ["#16a34a", "#0f766e", "#ca8a04", "#f59e0b", "#dc2626"]
+    max_price = max(prices) if prices else 50
+    chart_config = (
+        "{"
+        "type:'bar',"
+        f"data:{{labels:{json.dumps(labels, separators=(',', ':'))},datasets:[{{label:'Output price / 1M tokens',data:{json.dumps(prices, separators=(',', ':'))},backgroundColor:{json.dumps(colors[:len(prices)], separators=(',', ':'))},borderRadius:8,barPercentage:.72}}]}},"
+        "options:{"
+        "indexAxis:'y',"
+        "backgroundColor:'white',"
+        "layout:{padding:{top:12,right:52,bottom:8,left:8}},"
+        "plugins:{legend:{display:false},title:{display:false},datalabels:{anchor:'end',align:'right',color:'#111827',font:{weight:'bold',size:12},formatter:function(v){return '$'+v.toString();}}},"
+        f"scales:{{x:{{min:0,max:{max_price:g},grid:{{color:'#e2e8f0'}},title:{{display:true,text:'USD por 1M output tokens',font:{{size:12,weight:'bold'}}}},ticks:{{callback:function(v){{return '$'+v;}}}}}},y:{{grid:{{display:false}},ticks:{{font:{{size:12,weight:'bold'}},color:'#111827'}}}}}}"
+        "}"
+        "}"
+    )
+    uri = "https://quickchart.io/chart?width=900&height=420&version=4&format=png&backgroundColor=white&c=" + urllib.parse.quote(chart_config)
+    hover = " | ".join(f"{r.get('model_name')}: {money(r.get('output_price_per_1m'))}/M output" for r in chart_rows)
+    return (
+        f'<div style="background:#fff;border:1px solid {HAIR};border-radius:14px;padding:12px">'
+        f'<div style="font-size:11px;color:{MUTED};font-weight:900;margin-bottom:8px">Ordenado do menor para o maior custo de output</div>'
+        f'<img src="{uri}" title="{esc(hover)}" alt="Preço output por 1M tokens" width="100%" style="display:block;width:100%;max-width:760px;border:1px solid #e2e8f0;border-radius:12px;margin:0 auto" />'
+        f'</div>'
+    )
+
+
+def governance() -> str:
+    items = [
+        "Preços e contexto só contam quando vêm de documentação oficial.",
+        "Claims de qualidade exigem benchmark independente ou interno.",
+        "Modelos preview/deprecated/removed não entram como recomendação de produção.",
+    ]
+    return '<ul style="margin:0 0 0 18px;padding:0">' + "".join(
+        f'<li style="margin:7px 0;color:{INK};font-size:13px;line-height:1.45">{esc(item)}</li>' for item in items
+    ) + "</ul>"
+
+
+def source_footer() -> str:
+    lines = []
+    for provider, urls in FULL_SOURCES.items():
+        links = " · ".join(f'<a href="{esc(u)}" style="color:{BLUE}">{esc(u)}</a>' for u in urls)
+        lines.append(f'<div style="margin:4px 0"><strong>{esc(provider)}:</strong> {links}</div>')
+    return "".join(lines)
+
+
+def render(report_path: Path, md: str, rows: list[dict[str, str]]) -> str:
+    week = week_from_report(report_path, md)
+    stable = [r for r in rows if (r.get("status") or "").lower() == "stable"]
+    risks = [r for r in rows if (r.get("status") or "").lower() != "stable"]
+    intelligence_rows = sorted(rows, key=intelligence_score, reverse=True)
+    premium = pick(rows, lambda r: r.get("provider") == "Anthropic", stable[0] if stable else rows[0])
+    test = pick(rows, lambda r: "Mistral" in r.get("provider", ""), rows[0])
+    cheap = min(rows, key=lambda r: num(r.get("output_price_per_1m")))
+    avoid = risks[0] if risks else max(rows, key=lambda r: num(r.get("output_price_per_1m")))
+    avoid_reason = "Preview: sem produção direta." if risks else "Custo alto: validar ROI antes de escala."
+    multimodal = pick(rows, lambda r: any(x in (r.get("modalities") or "") for x in ("audio", "video")), rows[0])
+    long_ctx = max(rows, key=lambda r: num(r.get("context_window")))
+    enterprise = max(stable or rows, key=lambda r: num(r.get("provider_score")))
+
+    top_grid = [
+        top_pick("Geral premium", premium, f'{premium.get("model_score")}/100'),
+        top_pick("Código", premium, "coding"),
+        top_pick("Custo/output", cheap, f'{money(cheap.get("output_price_per_1m"))}/M output'),
+        top_pick("Docs longos/RAG", long_ctx, f'{ctx(long_ctx.get("context_window"))} context'),
+        top_pick("Multimodal", multimodal, "image/audio/video"),
+        top_pick("Enterprise", enterprise, "high confidence"),
+        top_pick("Europa open weight", test, "EU open weight"),
+        top_pick("Acompanhar", test, "WATCH"),
+    ]
+    top_rows = "".join("<tr>" + "".join(top_grid[i:i + 2]) + "</tr>" for i in range(0, len(top_grid), 2))
+
+    changes = [
+        ("Anthropic", "NOVO MODELO", "Claude Fable 5 passa a liderar capacidade premium.", GREEN),
+        ("Google/Gemini", "STABLE", "Gemini 3.5 Flash substitui o preview como opção recomendável.", GREEN),
+        ("Mistral", "OPEN WEIGHT", "Mistral Medium 3.5 atualiza a opção europeia para agentes e código.", GREEN),
+    ]
+    change_html = "".join(
+        f'<li style="margin:8px 0;color:{INK};line-height:1.4"><strong>{esc(provider)}</strong> · {badge(label, color)} · {esc(text)}</li>'
+        for provider, label, text, color in changes
+    )
+
+    preview_risk_model = risks[0] if risks else {"model_name": "Sem preview ativo", "provider": "Radar", "status": "stable"}
+    preview_risk_text = "Não usar em produção sem fallback." if risks else "Sem modelos preview nesta versão."
+    risk_cards = (
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>'
+        + decision_card("RISCO", "Preview", preview_risk_model, preview_risk_text, YELLOW)
+        + decision_card("CUSTO", "Custo alto", max(rows, key=lambda r: num(r.get("output_price_per_1m"))), "Output acima de $25/M exige validação de ROI.", RED)
+        + decision_card("VALIDAÇÃO", "Benchmark interno", test, "Validar qualidade no teu dataset antes de adoção.", BLUE)
+        + "</tr></table>"
+    )
+    investments = [
+        ("OpenAI", "raciocínio, código e integração de produto."),
+        ("Anthropic", "modelos premium para agentes e trabalho empresarial."),
+        ("Google/Gemini", "multimodalidade, contexto longo e tooling para agentes."),
+        ("xAI", "custo/contexto, voz e ferramentas dentro do ecossistema Grok."),
+        ("Mistral", "modelos europeus open weight e agentes para empresas."),
+    ]
+    investment_html = "".join(
+        f'<div style="font-size:13px;color:{INK};line-height:1.45;margin:7px 0"><strong>{esc(provider)}:</strong> {esc(text)}</div>'
+        for provider, text in investments
+    )
+    conclusion = (
+        "A leitura simples é esta: Claude Fable 5 lidera em inteligência bruta, mas é caro. "
+        "Para produção equilibrada, Grok 4.3 e Gemini 3.5 Flash são mais fáceis de justificar; Mistral Medium 3.5 fica como aposta europeia open weight a validar internamente."
+    )
+
+    return f'''<!doctype html>
+<html><body style="margin:0;background:{BG};font-family:Arial,Helvetica,sans-serif;color:{INK}">
+<div style="max-width:960px;margin:0 auto;padding:22px">
+  <div style="background:linear-gradient(135deg,#0f172a,#1d4ed8);border-radius:22px;padding:28px;color:white">
+    <h1 style="margin:0;font-size:30px;line-height:1.1">AI Model & Provider Radar {esc(week)}</h1>
   </div>
-  <div class="content">
-"""]
-    parts.append(hero)
-    parts.append(kpis)
-    parts.append('<h2 class="sec">🏆 Leaderboard da semana</h2>')
-    parts.append(leaderboard(cur, prev_rank))
-    if price_html:
-        parts.append('<h2 class="sec">💰 Comparador de preços</h2>')
-        parts.append(price_html)
-    if heat_html:
-        parts.append('<h2 class="sec">🔥 Mapa de atividade</h2>')
-        parts.append(heat_html)
-    parts.append('<h2 class="sec">📊 Score & evolução</h2>')
-    parts.append(charts)
-    if any(report["labs"].get(l, {}).get("mudou") or report["labs"].get(l) for l in LABS):
-        parts.append('<h2 class="sec">🔬 Por lab</h2>')
-        parts.append(lab_cards(report, score_by_lab, breakdown_by_lab))
-    parts.append(bullet_block("🔗 Sinais cruzados", report["sinais"]))
-    parts.append('</div>')  # close content
-    # footer
-    fontes = ""
-    if report["fontes"]:
-        lis = "".join(f'<li style="margin:3px 0">{inline(f)}</li>' for f in report["fontes"][:12])
-        fontes = f'<div style="margin:0 0 14px"><strong style="color:#fff">Fontes</strong><ul style="margin:6px 0;padding-left:18px">{lis}</ul></div>'
-    if cite_total:
-        pct = round(100 * cited / cite_total)
-        col = "#7fd1b9" if pct >= 80 else ("#e8b84b" if pct >= 40 else "#e0795f")
-        cite_badge = (f'<div style="margin:0 0 12px;font-size:12px"><span style="color:{col};font-weight:700">'
-                      f'✓ Rastreabilidade {pct}%</span> <span style="color:#9aa4af">— {cited}/{cite_total} '
-                      f'afirmações com fonte citada</span></div>')
-    else:
-        cite_badge = ""
-    parts.append(
-        '<div class="foot">'
-        + cite_badge + fontes +
-        '<div style="border-top:1px solid #2a3540;padding-top:14px;margin-top:4px">'
-        '<div style="color:#fff;font-size:15px;font-weight:700;margin-bottom:4px">Gostas deste briefing?</div>'
-        'Recebe a análise dos frontier model labs toda a segunda de manhã, com ranking, gráficos e os movimentos que interessam.'
-        '<div style="margin:12px 0 4px"><a class="cta" href="#">Subscrever o briefing semanal →</a></div>'
-        '<div style="color:#7c8794;margin-top:10px;font-size:11px">Metodologia: score 0-10 calculado de forma determinística a partir de '
-        'snapshots públicos (models, pricing, blog, jobs) comparados semana a semana — '
-        f'<strong style="color:#aab4be">{WEIGHTS_NOTE}</strong>. Análise qualitativa gerada e citada à fonte. Gerado pelo intelagent.</div>'
-        '</div></div>')
-    parts.append('</div></div></body></html>')
-    return "\n".join(p for p in parts if p)
+
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px -6px 4px"><tr>
+    {kpi_card("Mudanças críticas", "3", "modelo/preço/risco", BLUE)}
+    {kpi_card("Risco ativo", str(len(risks)), "preview em avaliação", RED if risks else GREEN)}
+    {kpi_card("Modelos avaliados", str(len(rows)), "inteligência + custo", SLATE)}
+    {kpi_card("Top oportunidade", cheap.get("model_name", ""), "baixo custo, stable", GREEN)}
+  </tr></table>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Mudanças críticas</h2>
+    <ul style="margin:0 0 0 18px;padding:0">{change_html}</ul>
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Decisão recomendada</h2>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+      {decision_card("DECISÃO", "Manter", premium, "Stable para código e agentes premium.", GREEN)}
+      {decision_card("AVALIAÇÃO", "Testar", test, "EU open weight para agentes e código.", BLUE)}
+      {decision_card("OTIMIZAÇÃO", "Avaliar custo", cheap, "Menor custo de output no radar.", GREEN)}
+      {decision_card("RISCO", "Rever/Evitar", avoid, avoid_reason, YELLOW)}
+    </tr></table>
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Top picks por cenário</h2>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">{top_rows}</table>
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Nível de inteligência</h2>
+    {intelligence_chart(rows)}
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Preço output / 1M tokens</h2>
+    {output_price_chart(rows)}
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Custo vs capacidade</h2>
+    {scatter(rows)}
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Onde estão a investir mais</h2>
+    {investment_html}
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Riscos</h2>
+    {risk_cards}
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Governança</h2>
+    {governance()}
+  </div>
+
+  <div style="background:#fff;border:1px solid {HAIR};border-radius:18px;padding:18px;margin-top:14px">
+    <h2 style="margin:0 0 10px;font-size:18px">Conclusão</h2>
+    <p style="margin:0;color:{INK};font-size:13px;line-height:1.55">{esc(conclusion)}</p>
+  </div>
+
+  <div style="font-size:12px;color:{MUTED};line-height:1.45;margin:16px 4px">
+    <strong>Fontes no corpo:</strong> OpenAI Docs · Anthropic Docs · Gemini Docs · xAI Docs · Mistral Docs · Artificial Analysis.
+    <div style="height:8px"></div>
+    <strong>Metodologia:</strong> O nível de inteligência usa Artificial Analysis Intelligence Index. Preços e contexto vêm da documentação oficial de cada provider. Provider Score mede adoção empresarial.
+    <div style="height:8px"></div>
+    {source_footer()}
+  </div>
+</div>
+</body></html>'''
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
-        sys.exit("Usage: render-briefing-html.py <report.md> [ranks.csv]")
-    report_path = Path(sys.argv[1])
-    if not report_path.is_file():
-        sys.exit(f"[render] report not found: {report_path}")
-    csv_path = Path(sys.argv[2]) if len(sys.argv) >= 3 else report_path.parent.parent / "data" / "ranks.csv"
-    data_dir = csv_path.parent
-    m = re.search(r"(\d{4}-W\d{1,2})", report_path.stem)
-    current_week = m.group(1) if m else ""
-    report = parse_report(report_path.read_text(encoding="utf-8"))
-    ranks = load_ranks(csv_path)
-    # Resolve the effective week the same way build() does (latest in ranks if mismatch).
-    weeks = sorted({r["week"] for r in ranks}, key=week_key)
-    eff_week = current_week if (current_week in weeks or not weeks) else weeks[-1]
-    metrics_by_lab = load_metrics(data_dir / "metrics.csv", eff_week)
-    pricing_rows = load_pricing(data_dir / "pricing.csv", eff_week)
-    sys.stdout.write(build(report, ranks, current_week, metrics_by_lab, pricing_rows))
+        raise SystemExit("usage: render-briefing-html.py <report.md> [model-radar.csv]")
+    report = Path(sys.argv[1])
+    csv_path = Path(sys.argv[2]) if len(sys.argv) > 2 else report.parent.parent / "data" / "model-radar.csv"
+    print(render(report, report.read_text(encoding="utf-8"), read_rows(csv_path)))
 
 
 if __name__ == "__main__":

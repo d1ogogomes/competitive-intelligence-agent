@@ -1,0 +1,11 @@
+week,lab,model,input_per_1m,output_per_1m,flagship,drift,source
+2026-W23,OpenAI,GPT-5.5,5,30,1,,https://openai.com/api/pricing/
+2026-W23,Anthropic,Claude Opus 4.8,5,25,1,,https://docs.anthropic.com/en/docs/about-claude/models
+2026-W23,Google / Gemini,Gemini 3 Flash Preview,0.5,3,1,,https://ai.google.dev/gemini-api/docs/pricing
+2026-W23,xAI,Grok 4.3,1.25,2.5,1,,https://docs.x.ai/docs/models
+2026-W23,Mistral AI,Mistral Large 3,0.5,1.5,1,,https://mistral.ai/pricing
+2026-W24,OpenAI,GPT-5.5,5,30,1,,https://openai.com/api/pricing/
+2026-W24,Anthropic,Claude Fable 5,10,50,1,,https://docs.anthropic.com/en/docs/about-claude/pricing
+2026-W24,Google / Gemini,Gemini 3.5 Flash,1.5,9,1,,https://ai.google.dev/gemini-api/docs/pricing
+2026-W24,xAI,Grok 4.3,1.25,2.5,1,,https://docs.x.ai/docs/models
+2026-W24,Mistral AI,Mistral Medium 3.5,1.5,7.5,1,,https://docs.mistral.ai/models/model-cards/mistral-medium-3-5-26-04

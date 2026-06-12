@@ -43,14 +43,17 @@ mkdir -p "$out_dir"
 
 echo "[fetch-snapshot] $competitor/$source <- $url"
 
-agent-browser open "$url" --headers "{\"User-Agent\": \"$user_agent\"}" >/dev/null
-agent-browser wait --load networkidle >/dev/null
-content=$(agent-browser get text "$selector" 2>/dev/null || true)
+session="intelagent-${competitor}-${source}"
+agent-browser --session "$session" open "$url" --headers "{\"User-Agent\": \"$user_agent\"}" >/dev/null
+# Some documentation and benchmark sites keep analytics/websocket requests open
+# forever. DOMContentLoaded is sufficient because we extract rendered body text.
+agent-browser --session "$session" wait --load domcontentloaded >/dev/null 2>&1 || true
+content=$(agent-browser --session "$session" get text "$selector" 2>/dev/null || true)
 
 # Fallback to body when the selector returned nothing useful.
 if [[ -z "$content" || $(printf %s "$content" | wc -c) -lt 200 ]]; then
   echo "[fetch-snapshot] selector '$selector' too small, falling back to body"
-  content=$(agent-browser get text body)
+  content=$(agent-browser --session "$session" get text body)
 fi
 
 # Detect anti-bot / unrendered pages (e.g. OpenAI's Cloudflare JS challenge) so
@@ -73,9 +76,9 @@ PY
   if [[ -n "$arc_ts" ]]; then
     arc_url="https://web.archive.org/web/${arc_ts}id_/$url"
     echo "[fetch-snapshot] $competitor/$source: usando arquivo ${arc_ts:0:8}" >&2
-    agent-browser open "$arc_url" --headers "{\"User-Agent\": \"$user_agent\"}" >/dev/null 2>&1 || true
-    agent-browser wait --load networkidle >/dev/null 2>&1 || true
-    content=$(agent-browser get text body 2>/dev/null || true)
+    agent-browser --session "$session" open "$arc_url" --headers "{\"User-Agent\": \"$user_agent\"}" >/dev/null 2>&1 || true
+    agent-browser --session "$session" wait --load domcontentloaded >/dev/null 2>&1 || true
+    content=$(agent-browser --session "$session" get text body 2>/dev/null || true)
     url="$url (via web.archive.org ${arc_ts:0:8})"
   fi
   if [[ -z "$content" || $(printf %s "$content" | wc -c) -lt 200 ]] || \
@@ -97,3 +100,4 @@ fi
 
 bytes=$(wc -c < "$out_file" | tr -d ' ')
 echo "[fetch-snapshot] wrote $out_file ($bytes bytes)"
+agent-browser --session "$session" close >/dev/null 2>&1 || true

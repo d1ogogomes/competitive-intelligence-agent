@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
 # weekly.sh
-# Single entry point for the weekly briefing pipeline.
-#   1. fetch-all.sh        capture today's snapshots
-#   2. diff-all.sh         compute per-pair diffs against the previous snapshot
-#   3. agente OpenClaw     reads the diffs and writes reports/<YYYY>-W<NN>.md
-#
-# Designed to be the cron target. Run from anywhere; resolves its own paths.
-#
-# Required env (loaded from openclaw/.env if not already set):
-#   OPENROUTER_API_KEY     so the agent can talk to the model
+# AI Model & Provider Radar weekly pipeline.
+# Captures official provider snapshots, computes deterministic model/provider scores,
+# writes the executive dashboard, QA-checks it, then sends it.
 
 set -euo pipefail
 
@@ -17,13 +11,13 @@ skip_fetch=false
 for arg in "$@"; do
   case "$arg" in
     --skip-qa) skip_qa=true ;;
-    --skip-fetch) skip_fetch=true ;;  # reuse existing snapshots/diffs/metrics (no re-scrape)
+    --skip-fetch) skip_fetch=true ;;
   esac
 done
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 workspace_dir=$(cd "$script_dir/.." && pwd)
-openclaw_dir=$(cd "$workspace_dir/.." && pwd)
+openclaw_dir="$workspace_dir"
 
 if [[ -f "$openclaw_dir/.env" ]]; then
   set -a
@@ -32,7 +26,7 @@ if [[ -f "$openclaw_dir/.env" ]]; then
   set +a
 fi
 
-if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+if [[ "${INTELAGENT_USE_LLM_REPORT:-false}" == "true" && -z "${OPENROUTER_API_KEY:-}" ]]; then
   echo "[weekly] OPENROUTER_API_KEY missing; cannot run agent." >&2
   exit 1
 fi
@@ -40,137 +34,117 @@ fi
 export OPENCLAW_STATE_DIR="$openclaw_dir/state"
 export OPENCLAW_CONFIG_PATH="$openclaw_dir/config/openclaw.json"
 
-# ISO week number, e.g. 2026-W20.
 year=$(date -u +%G)
 week=$(date -u +%V)
 week_id="${year}-W${week}"
-session_id="weekly-${week_id}"
+session_id="model-radar-${week_id}"
+report_path="$workspace_dir/reports/${week_id}.md"
+plan_path="$workspace_dir/docs/AI_MODEL_PROVIDER_RADAR_PLAN.md"
 
-echo "[weekly] $week_id starting"
+echo "[weekly] $week_id AI Model & Provider Radar starting"
 
 if [[ "$skip_fetch" == "true" ]]; then
-  echo "[weekly] --skip-fetch: a reutilizar snapshots/diffs/métricas existentes"
+  echo "[weekly] --skip-fetch: reusing existing snapshots/diffs/pricing"
 else
   "$script_dir/fetch-all.sh"
   "$script_dir/diff-all.sh"
-  # Deterministic scoring from the snapshots (Δ price, new models, blog, jobs) ->
-  # data/metrics.csv + data/ranks.csv. The agent writes the qualitative analysis;
-  # the numbers come from here, not from the LLM.
   python3 "$script_dir/compute-metrics.py" "$week_id" "$workspace_dir/data/snapshots" || \
-    echo "[weekly] compute-metrics falhou (baseline sem comparação?)" >&2
+    echo "[weekly] compute-metrics failed (possibly baseline without comparison)" >&2
   python3 "$script_dir/extract-pricing.py" "$week_id" "$workspace_dir/data/snapshots" || \
-    echo "[weekly] extract-pricing falhou" >&2
+    echo "[weekly] extract-pricing failed" >&2
 fi
 
-# Compose a deterministic prompt for the agent. Keep instructions explicit
-# because free models follow tool semantics imperfectly.
+# Precompute deterministic model scores before the report is written. The visible
+# intelligence section is rendered from Artificial Analysis Intelligence Index.
+python3 "$script_dir/compute-model-radar.py" "$week_id" "$report_path" || \
+  echo "[weekly] compute-model-radar pre-pass failed" >&2
+
 prompt=$(cat <<EOF
-És um analista de competitive intelligence sobre os frontier model labs:
-OpenAI, Anthropic, Google / Gemini, xAI e Mistral AI.
+És um analista executivo de IA. Tens de gerar o email semanal "AI Model & Provider Radar" em português europeu, curto, factual e orientado a decisão.
 
-Lê o ficheiro 'memory/competitors.md' para saberes as URLs públicas oficiais de cada concorrente/fonte (ex: o pricing da Anthropic é https://www.anthropic.com/pricing).
+Lê obrigatoriamente estes ficheiros locais antes de escrever:
+- ${plan_path}
+- memory/competitors.md
+- data/model-radar.csv
+- data/pricing.csv, se existir
+- data/diffs/*/*/, para mudanças semanais verificadas
 
-Lê todos os diffs em data/diffs/*/*/. Cada um descreve o que foi adicionado
-e removido entre os dois snapshots mais recentes de um lab. Ignora linhas de
-header repetidas (menus, FILTERS, COPY RSS FEED URL, etc.) e foca-te nas
-mudanças reais (novos modelos, alterações de pricing, features de API,
-deprecations, contratações que revelem direção).
+Objetivo principal: responder "que modelo usar, testar, acompanhar ou evitar, e porquê?". O foco NÃO é quem foi mais ativo.
 
-Se uma fonte ainda só tiver um snapshot e portanto não houver diff, trata essa
-execução como baseline inicial: diz isso explicitamente e não apresentes sinais
-estáticos como se fossem mudanças verificadas.
+Guarda o output com a tool 'write' em reports/${week_id}.md.
 
-Usa a tool 'write' (NÃO file_write) para guardar um briefing em
-reports/${week_id}.md, seguindo EXATAMENTE esta estrutura:
+Estrutura obrigatória, por esta ordem exata:
+# AI Model & Provider Radar Semana ${week_id}
+## 1. Mudanças críticas da semana
+## 2. Decisão recomendada
+## 3. Top picks por cenário
+## 4. Ranking de modelos
+## 5. Comparador preço / contexto / modalidades
+## 6. Gráficos visuais
+## 7. Riscos e depreciações
+## 8. Fontes e metodologia
 
-  # Briefing Semanal — Semana ${week_id}
-
-  ## Resumo
-  3-5 bullets do mais importante da semana, com números concretos quando existirem.
-
-  ## OpenAI
-  ### O que mudou
-  - <facto verificável e específico> — Fonte: <url_publica_oficial> (<data>)
-  - <outro facto> — Fonte: <url_publica_oficial> (<data>)
-  ### Porque importa
-  <2-3 frases: implicações competitivas, não repetir o facto>
-  ### O que fazer
-  - <ação concreta ou sinal a vigiar para a próxima semana>
-
-  ## Anthropic
-  (mesma estrutura: O que mudou / Porque importa / O que fazer)
-
-  ## Google / Gemini
-  (mesma estrutura)
-
-  ## xAI
-  (mesma estrutura)
-
-  ## Mistral AI
-  (mesma estrutura)
-
-  ## Sinais cruzados
-  Padrões que mais de um lab fez ao mesmo tempo (ex: guerra de preços, ciclos de release alinhados).
-
-  ## Fontes
-  Lista de URLs consultados com data.
-
-REGRAS DE QUALIDADE (isto é um produto pago — rigor acima de tudo):
-- CADA bullet em "O que mudou" TEM de terminar com a URL pública oficial do concorrente extraída de 'memory/competitors.md'. Exemplo: "— Fonte: https://www.anthropic.com/pricing (2026-05-29)".
-- **PROIBIDO**: Nunca uses caminhos de ficheiros locais (ex: 'data/diffs/...' ou 'reports/...') como fonte. A fonte deve ser sempre a URL web pública oficial.
-- Só afirmas o que está REALMENTE nos diffs. Nada de inventar números, modelos ou preços. Se não há prova, não existe.
-- "Porque importa" é análise (o "e depois?"), não repetição do facto.
-- "O que fazer" é acionável: o que o leitor deve vigiar ou decidir.
-- Se um lab não mudou, escreve só "Sem alterações relevantes nesta semana." em "O que mudou" e deixa as outras secções curtas.
-- Português, factual, zero marketing. Não narres o teu processo ("criei", "corri").
-
-NOTA: o score/ranking de cada lab é calculado por uma ferramenta a partir dos snapshots (Δ de preços, modelos novos, etc.) — tu NÃO escreves scores.
+Regras obrigatórias:
+- O briefing deve parecer um dashboard executivo visual, não um relatório longo.
+- Máximo 3 mudanças críticas, 4 cards de decisão e frases curtas.
+- Usar Nível de inteligência com Artificial Analysis Intelligence Index para a parte de inteligência.
+- Não incluir um segundo ranking de produção.
+- Não incluir ranking antigo com score interno no corpo principal.
+- Modelos PREVIEW só podem aparecer como testar/acompanhar; nunca como recomendação de produção.
+- Modelos DEPRECATED ou REMOVED devem ir para rever/evitar.
+- Usar gráficos visuais para Nível de inteligência, preço output e custo vs capacidade.
+- Substituir tabelas largas por cards compactos.
+- Separar riscos reais de governança.
+- Não incluir notas internas, resumo de alterações ou bastidores do processo.
+- Acrescentar apenas uma secção chamada Conclusão antes das fontes.
+- Não uses Activity Score como ranking central.
+- Mantém separados Intelligence Index, Provider Score e Movement Score.
+- Cada recomendação/top pick inclui apenas modelo, provider, uma métrica principal e estado.
+- Nunca digas "melhor modelo" sem dizer melhor para quê, com base em que dados e com que confiança.
+- Mudanças críticas no topo: apenas novos modelos, preço, API, contexto/modalidades, deprecated/removed, privacidade/enterprise ou incidente/status relevante. Se não houver prova nos diffs/fontes oficiais, escreve "sem alteração crítica verificada".
+- Usa fontes oficiais dos providers e benchmarks independentes listados no plano. Não uses caminhos locais como fonte pública no email.
+- Máximo 2-3 gráficos no corpo principal; usa gráficos ASCII/tabelas compatíveis com email em Markdown. Não mostres evolução histórica se houver menos de 3 semanas comparáveis; nesse caso escreve a frase indicada no plano.
+- Inclui badges textuais quando aplicável: STABLE, PREVIEW, LOW COST, HIGH CONTEXT, MULTIMODAL, ENTERPRISE, DEPRECATED, WATCH.
+- Português europeu, frases curtas, zero marketing, não narres o teu processo.
 EOF
 )
 
-# The Gemini free tier returns 429/503 under load; retry with backoff before giving up.
-# IMPORTANT: `openclaw agent` exits 0 even when the run errors (isError=true) and
-# never writes the report. So we cannot trust its exit code. Instead we verify the
-# report file was actually (re)written during THIS run by comparing against a marker
-# created before the agent starts. This also prevents shipping a stale report that
-# happens to already exist on disk (e.g. carried over from a previous run).
-report_path="$workspace_dir/reports/${week_id}.md"
-run_marker=$(mktemp)
 agent_ok=false
-for attempt in 1 2 3; do
-  echo "[weekly] agente (tentativa $attempt/3)..."
-  openclaw agent --local --thinking low --timeout 300 \
-    --agent main --session-id "${session_id}-${attempt}" --message "$prompt" || true
-  if [[ -f "$report_path" && "$report_path" -nt "$run_marker" ]]; then
-    agent_ok=true
-    break
-  fi
-  echo "[weekly] tentativa $attempt não gerou briefing novo (provável 429/quota); backoff..." >&2
-  sleep $((attempt * 60))  # 60s/120s: deixa o limite por-minuto do free tier recuperar
-done
-rm -f "$run_marker"
-if [[ "$agent_ok" != "true" ]]; then
-  echo "[weekly] ERRO: agente não produziu um briefing novo em 3 tentativas (provável quota/429). Sem envio." >&2
-  exit 1
+if [[ "${INTELAGENT_USE_LLM_REPORT:-false}" == "true" ]]; then
+  run_marker=$(mktemp)
+  for attempt in 1; do
+    echo "[weekly] agente (tentativa $attempt/1)..."
+    openclaw agent --local --thinking low --timeout 120 \
+      --agent main --session-id "${session_id}-${attempt}" --message "$prompt" || true
+    if [[ -f "$report_path" && "$report_path" -nt "$run_marker" ]]; then
+      agent_ok=true
+      break
+    fi
+    echo "[weekly] tentativa $attempt não gerou briefing novo; fallback será usado." >&2
+  done
+  rm -f "$run_marker"
+else
+  echo "[weekly] INTELAGENT_USE_LLM_REPORT=false; using deterministic dashboard generator"
 fi
 
-echo "[weekly] $week_id done -> workspace/reports/${week_id}.md"
+if [[ "$agent_ok" != "true" ]]; then
+  python3 "$script_dir/generate-radar-report.py" "$week_id" "$report_path"
+fi
 
-# Run Automated QA Guardrail
+python3 "$script_dir/compute-model-radar.py" "$week_id" "$report_path" || \
+  echo "[weekly] compute-model-radar post-pass failed" >&2
+
+echo "[weekly] $week_id done -> reports/${week_id}.md"
+
 if [[ "$skip_qa" == "true" ]]; then
   echo "[weekly] QA Guardrail SKIPPED via --skip-qa flag"
 else
-  echo "[weekly] Running Automated QA Guardrail..."
-  if ! python3 "$script_dir/qa-check.py" "$workspace_dir/reports/${week_id}.md" "$workspace_dir/data/metrics.csv"; then
-    echo "[weekly] ERROR: QA Guardrail rejected the generated briefing!" >&2
-    echo "[weekly] Email delivery BLOCKED to preserve subscription quality." >&2
-    exit 1
-  fi
+  echo "[weekly] Running QA Guardrail..."
+  python3 "$script_dir/qa-check.py" "$report_path" "$workspace_dir/data/model-radar.csv"
 fi
 
-# Optional email delivery via AgentMail. Skips silently if not configured.
 if [[ -n "${AGENTMAIL_API_KEY:-}" && -n "${AGENTMAIL_INBOX_ID:-}" && -n "${BRIEFING_RECIPIENTS:-}" ]]; then
-  "$script_dir/send-briefing.sh" "$workspace_dir/reports/${week_id}.md" || \
+  "$script_dir/send-briefing.sh" "$report_path" || \
     echo "[weekly] email delivery failed (briefing was generated, just not sent)" >&2
 else
   echo "[weekly] AgentMail env vars not set, skipping email delivery"

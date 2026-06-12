@@ -1,6 +1,6 @@
 lab,model,input_per_1m,output_per_1m,source_url,verified
 OpenAI,GPT-5.5,5,30,https://openai.com/api/pricing/,2026-05-29
-Anthropic,Claude Opus 4.8,5,25,https://docs.anthropic.com/en/docs/about-claude/models,2026-05-29
-Google / Gemini,Gemini 3 Pro,2,12,https://ai.google.dev/pricing,2026-05-29
+Anthropic,Claude Fable 5,10,50,https://docs.anthropic.com/en/docs/about-claude/pricing,2026-06-12
+Google / Gemini,Gemini 3.5 Flash,1.5,9,https://ai.google.dev/gemini-api/docs/pricing,2026-06-12
 xAI,Grok 4.3,1.25,2.5,https://docs.x.ai/docs/models,2026-05-29
-Mistral AI,Mistral Large 3,2,6,https://mistral.ai/pricing,2026-05-29
+Mistral AI,Mistral Medium 3.5,1.5,7.5,https://docs.mistral.ai/models/model-cards/mistral-medium-3-5-26-04,2026-06-12

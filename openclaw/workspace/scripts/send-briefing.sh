@@ -22,9 +22,9 @@ set -euo pipefail
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 workspace_dir=$(cd "$script_dir/.." && pwd)
-openclaw_dir=$(cd "$workspace_dir/.." && pwd)
+openclaw_dir="$workspace_dir"
 
-if [[ -f "$openclaw_dir/.env" ]]; then
+if [[ -f "$openclaw_dir/.env" && ( -z "${AGENTMAIL_API_KEY:-}" || -z "${AGENTMAIL_INBOX_ID:-}" || -z "${BRIEFING_RECIPIENTS:-}" ) ]]; then
   set -a
   # shellcheck disable=SC1090,SC1091
   . "$openclaw_dir/.env"
@@ -47,7 +47,7 @@ if [[ -z "$briefing" || ! -f "$briefing" ]]; then
   exit 1
 fi
 
-ranks_csv="$workspace_dir/data/ranks.csv"
+model_radar_csv="$workspace_dir/data/model-radar.csv"
 week_id=$(basename "$briefing" .md | grep -oE '[0-9]{4}-W[0-9]{1,2}' || true)
 
 # 1. Compute deterministic metrics from the snapshots -> data/metrics.csv + ranks.csv.
@@ -61,11 +61,11 @@ if ! python3 "$script_dir/extract-pricing.py" "${week_id:-}" "$workspace_dir/dat
 fi
 
 basename=$(basename "$briefing" .md)
-subject="Competitive Intelligence — ${basename}"
+subject="AI Model & Provider Radar ${basename} Nível de inteligência"
 body=$(cat "$briefing")
 
-# 2. Build the rich HTML body.
-html=$(python3 "$script_dir/render-briefing-html.py" "$briefing" "$ranks_csv")
+# 2. Build the rich HTML body. Charts are inline in the dashboard; no attachment.
+html=$(python3 "$script_dir/render-briefing-html.py" "$briefing" "$model_radar_csv")
 
 # 3. AgentMail expects JSON; jq builds it safely (escaping newlines/quotes).
 payload=$(jq -n \
@@ -74,7 +74,7 @@ payload=$(jq -n \
   --arg html "$html" \
   --arg recipients "$BRIEFING_RECIPIENTS" \
   '{
-    to: ($recipients | split(",") | map(. | gsub("^\\s+|\\s+$"; ""))),
+    to: ($recipients | gsub("[;\\n]"; ",") | split(",") | map(. | gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | unique),
     subject: $subject,
     text: $text,
     html: $html
