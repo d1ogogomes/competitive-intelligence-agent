@@ -1,69 +1,60 @@
 # Fontes a Monitorizar
 
-5 concorrentes no espaço de AI coding assistants. 
+5 frontier model labs monitorizados pelo agente.
+
 ## Concorrentes
 
-| # | Empresa / Produto | Porquê |
-|---|-------------------|--------|
-| 1 | **Cursor** (Anysphere) | IDE AI, cresce rápido, pricing muda com frequência |
-| 2 | **GitHub Copilot** (Microsoft) | Incumbent, releases mensais, changelogs públicos |
-| 3 | **Anthropic Claude / Claude Code** | Releases de modelos visíveis, API pricing público |
-| 4 | **Windsurf** (Codeium) | Pivot recente, boa fonte de sinais competitivos |
-| 5 | **Zed** (Zed Industries) | Editor nativo com AI integrado, desenvolvimento público no GitHub |
+| # | Empresa / Lab | Porquê |
+|---|---------------|--------|
+| 1 | **OpenAI** | Líder de mercado, dita o ritmo de pricing e modelos |
+| 2 | **Anthropic** | Criadora do Claude, forte concorrente directo em modelos e APIs |
+| 3 | **Google / Gemini** | Ecossistema Gemini, atualizações constantes em docs e modelos |
+| 4 | **xAI** | Grok e novos clusters de computação, evolução rápida |
+| 5 | **Mistral AI** | Principal alternativa europeia open-weights |
 
 ---
 
 ## Fontes por concorrente
 
-### 1. Cursor
+### 1. OpenAI
 
-- **Release notes:** https://cursor.com/changelog
-- **Docs:** https://docs.cursor.com
-- **Pricing page:** https://cursor.com/pricing
-- **Blog oficial:** https://cursor.com/blog
-- **Job listings:** https://cursor.com/careers
-- **Social media:** X.com/@cursor_ai
-- **Terms / policy:** https://cursor.com/terms
+- **Models:** https://platform.openai.com/docs/models
+- **Pricing:** https://openai.com/api/pricing/
+- **Blog:** https://openai.com/news/
+- **Careers:** https://openai.com/careers/search/
+- **Changelog:** https://platform.openai.com/docs/changelog
 
-### 2. GitHub Copilot
+### 2. Anthropic
 
-- **Release notes:** https://github.blog/changelog/label/copilot/
-- **Docs:** https://docs.github.com/copilot
-- **Pricing page:** https://github.com/features/copilot/plans
-- **Blog oficial:** https://github.blog/ai-and-ml/
-- **Job listings:** https://github.careers
-- **Social media:** X.com/@GitHubCopilot
-- **Terms / policy:** https://docs.github.com/copilot/responsible-use-of-github-copilot-features
+- **Models:** https://docs.anthropic.com/en/docs/about-claude/models
+- **Pricing:** https://www.anthropic.com/pricing
+- **Blog:** https://www.anthropic.com/news
+- **Careers:** https://www.anthropic.com/careers
+- **Changelog:** https://docs.anthropic.com/en/release-notes/whats-new
 
-### 3. Anthropic / Claude Code
+### 3. Google / Gemini
 
-- **Release notes:** https://docs.anthropic.com/en/docs/about-claude/models
-- **Docs:** https://docs.anthropic.com
-- **Pricing page:** https://www.anthropic.com/pricing
-- **Blog oficial:** https://www.anthropic.com/news
-- **Job listings:** https://www.anthropic.com/careers
-- **Social media:** X.com/@AnthropicAI
-- **Terms / policy:** https://www.anthropic.com/legal/aup
+- **Models:** https://ai.google.dev/gemini-api/docs/models
+- **Pricing:** https://ai.google.dev/pricing
+- **Blog:** https://blog.google/technology/ai/
+- **Careers:** https://deepmind.google/about/careers/
+- **Changelog:** https://ai.google.dev/gemini-api/docs/release-notes
 
-### 4. Windsurf (Codeium)
+### 4. xAI
 
-- **Release notes:** https://windsurf.com/changelog
-- **Docs:** https://docs.windsurf.com
-- **Pricing page:** https://windsurf.com/pricing
-- **Blog oficial:** https://windsurf.com/blog
-- **Job listings:** https://windsurf.com/careers
-- **Social media:** X.com/@windsurf_ai
-- **Terms / policy:** https://windsurf.com/terms-of-service
+- **Models:** https://docs.x.ai/docs/models
+- **Pricing:** https://docs.x.ai/docs/models
+- **Blog:** https://x.ai/news
+- **Careers:** https://x.ai/careers
+- **Changelog:** https://docs.x.ai/docs
 
-### 5. Zed
+### 5. Mistral AI
 
-- **Release notes:** https://zed.dev/releases
-- **Docs:** https://zed.dev/docs
-- **Pricing page:** https://zed.dev/pricing
-- **Blog oficial:** https://zed.dev/blog
-- **Job listings:** https://zed.dev/jobs
-- **Social media:** X.com/@zeddotdev, GitHub: https://github.com/zed-industries/zed
-- **Terms / policy:** https://zed.dev/terms-of-service
+- **Models:** https://docs.mistral.ai/getting-started/models/models_overview/
+- **Pricing:** https://mistral.ai/pricing
+- **Blog:** https://mistral.ai/news
+- **Careers:** https://mistral.ai/careers
+- **Changelog:** https://docs.mistral.ai/changelog/
 
 ---
 
@@ -71,34 +62,7 @@
 
 O agente compara snapshots e emite sinal quando:
 
-- **Pricing:** qualquer alteração numérica, novo tier, remoção de tier
-- **Release notes:** novas entradas desde último snapshot
-- **Job listings:** novas vagas (especialmente senior/research/infra — indica direção estratégica)
-- **Blog:** novos posts, classificados por tipo (launch, research, partnership, incident)
-- **Docs:** novos endpoints de API, modelos adicionados/removidos
-
-## Output (briefing semanal)
-
-Ficheiro em `workspace/reports/YYYY-WW.md`:
-
-```md
-# Weekly Briefing — Week YYYY-WW
-
-## TL;DR
-- ...
-
-## Por concorrente
-### Cursor
-- O que mudou:
-- O que significa:
-- O que vigiar:
-
-### GitHub Copilot
-...
-
-## Sinais cruzados
-Padrões em ≥ 2 concorrentes.
-
-## Fontes consultadas
-URLs + timestamps.
-```
+- **Pricing:** qualquer alteração numérica de custo de tokens, novos modelos suportados
+- **Changelog / Release notes:** novos modelos, novas funcionalidades da API, deprecations
+- **Careers / Job listings:** volume de vagas e novas posições (sinaliza áreas de foco estratégico)
+- **Blog:** novos lançamentos e publicações técnicas

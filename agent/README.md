@@ -1,6 +1,6 @@
-# Agent
+# Agent (Descontinuado)
 
-Projeto para monitorizar fontes web sobre concorrentes/produtos de IA, guardar snapshots, detetar mudancas e gerar relatorios semanais.
+> ⚠️ **Nota:** Esta pasta refere-se à tentativa inicial de implementação utilizando o **ZeroClaw**. O desenvolvimento foi **descontinuado** a favor da versão baseada em **OpenClaw** localizada na pasta [/openclaw](file:///Users/diogogomes/Documents/GitHub/2026-ei-aoopii-c26/openclaw). Esta pasta e documentação são mantidas apenas para fins de histórico e arquivo.
 
 ## Stack
 

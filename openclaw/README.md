@@ -189,6 +189,15 @@ chmod +x /root/run-briefing.sh
 
 > A key da OpenRouter (e da Gemini, se usada) vive em **dois sítios**: `.env` **e** `state/agents/main/agent/auth-profiles.json`. Ao rodar a key, atualiza os dois — senão o agente usa a antiga e dá `401`.
 
+### Resolução de Problemas no VPS
+
+Caso o e-mail semanal não seja enviado ou queiras testar a integridade do ambiente do VPS (verificar RAM/Swap, caminhos absolutos, variáveis do `.env`, chaves de API ou dependências do Chromium headless), corre o script de diagnóstico no VPS:
+
+```sh
+cd ~/2026-ei-aoopii-c26/openclaw
+bash workspace/scripts/diagnose-vps.sh
+```
+
 ## Notas de segurança
 
 - A OpenRouter API key vive em `.env` (gitignored) e, depois do setup, em `state/agents/main/agent/auth-profiles.json` (também gitignored via `state/`).

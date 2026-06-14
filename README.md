@@ -10,9 +10,9 @@ Trabalho da UC Aprendizagem Organizacional — Opção II (EI, 3.º ano)
 
 ## Tema
 
-Monitorizar concorrentes no espaço dos AI coding assistants e produzir um briefing semanal com o que mudou. As fontes são públicas: changelogs, pricing, blogs, jobs, docs. O agente vai buscar tudo, compara com a versão da semana passada, e escreve o relatório.
+Monitorizar concorrentes no espaço dos frontier model labs e produzir um briefing semanal com o que mudou. As fontes são públicas: changelogs, pricing, blogs, jobs, docs. O agente vai buscar tudo, compara com a versão da semana passada, e escreve o relatório.
 
-Concorrentes: Cursor, GitHub Copilot, Claude (Anthropic), Windsurf, Zed.
+Concorrentes: OpenAI, Anthropic, Google / Gemini, xAI, Mistral AI.
 
 ## Como funciona
 
@@ -30,10 +30,10 @@ Todas as páginas são capturadas com o `agent-browser` (vercel-labs, Chromium h
 ## Stack
 
 - **Agente:** OpenClaw (open-source, Node.js, corre local ou em VPS)
-- **LLM:** OpenRouter free tier (rotador de modelos gratuitos)
+- **LLM:** OpenRouter (modelos grátis para dev local, modelos pagos/billing ativo para execução no cron)
 - **Browser:** agent-browser (vercel-labs) + Chromium headless
 - **E-mail:** AgentMail
-- **Deploy:** local agora, VPS depois (Oracle Free Tier ou similar) — ver `openclaw/workspace/scripts/CRON.md`
+- **Deploy:** DigitalOcean VPS (Ubuntu) — ver `openclaw/workspace/scripts/CRON.md`
 
 Não treinámos nenhum modelo. O LLM é usado como ferramenta de raciocínio — o trabalho está na orquestração e no pipeline de delta detection.
 
@@ -48,7 +48,7 @@ Não treinámos nenhum modelo. O LLM é usado como ferramenta de raciocínio —
 │   │   ├── AGENTS.md        regras do agente
 │   │   ├── memory/          contexto persistente (concorrentes)
 │   │   ├── skills/          skills versionadas (browser, humanizer, agentmail)
-│   │   ├── scripts/         pipeline (fetch, diff, weekly, send-briefing)
+│   │   ├── scripts/         pipeline (fetch, diff, weekly, send-briefing, diagnose-vps)
 │   │   ├── data/            snapshots + diffs (gitignored)
 │   │   └── reports/         briefings semanais
 │   ├── openclaw.patch.json5         patch para Linux (Micael)
@@ -85,6 +85,6 @@ Para automatizar semanalmente, ver `openclaw/workspace/scripts/CRON.md`.
 
 ## Estado actual
 
-Pipeline end-to-end validado. Dois briefings reais já gerados (semanas 20 e 21 de 2026), com snapshots datados, diffs e análise cruzada. Falta deploy num VPS para correr autonomamente.
+Pipeline end-to-end validado e em produção num VPS da DigitalOcean. O briefing é gerado de forma totalmente autónoma todas as segundas-feiras às 09:00 e enviado para a lista de distribuição via AgentMail. Para resolver problemas em produção ou validar a saúde do ambiente (como bibliotecas do Chromium, RAM, ou chaves de API), corre o script de diagnóstico: `bash workspace/scripts/diagnose-vps.sh`.
 
 Entrega final: 14 de junho de 2026.
